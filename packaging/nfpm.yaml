@@ -32,6 +32,31 @@ contents:
     expand: true
     file_info:
       mode: 0644
+  - src: ${CPYREF_MIT_LICENSE}
+    dst: /usr/share/licenses/cpyref/LICENSE.MIT
+    expand: true
+    file_info:
+      mode: 0644
+  - src: ${CPYREF_LICENSE}
+    dst: /usr/share/doc/cpyref/LICENSE
+    expand: true
+    file_info:
+      mode: 0644
+  - src: ${CPYREF_MIT_LICENSE}
+    dst: /usr/share/doc/cpyref/LICENSE.MIT
+    expand: true
+    file_info:
+      mode: 0644
+  - src: ${CPYREF_AGENTS}
+    dst: /usr/share/doc/cpyref/AGENTS.md
+    expand: true
+    file_info:
+      mode: 0644
+  - src: ${CPYREF_UPSTREAM}
+    dst: /usr/share/doc/cpyref/UPSTREAM.toml
+    expand: true
+    file_info:
+      mode: 0644
   - src: ${CPYREF_README}
     dst: /usr/share/doc/cpyref/README.md
     expand: true

@@ -3,6 +3,7 @@ pub mod context;
 pub mod error;
 pub mod handoff;
 pub mod runner;
+pub mod search;
 pub mod select;
 pub mod snapshot;
 pub mod store;

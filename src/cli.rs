@@ -1,5 +1,5 @@
 use clap::{Args, Parser, Subcommand};
-use cpyref::{context::Options, select::Spec, DEFAULT_MAX_BYTES};
+use cpyref::{context::Options, select::Spec, store::RecordKind, DEFAULT_MAX_BYTES};
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
@@ -75,6 +75,25 @@ pub enum Command {
     Context,
     /// List metadata in this space, newest first; never expand payloads.
     List {
+        #[command(flatten)]
+        filter: FilterArgs,
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=1000))]
+        limit: u32,
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Find saved references by ID, source, note or exact copied text, without expanding bodies.
+    Search {
+        query: String,
+        /// Search only metadata; skip copied payloads for a faster lookup.
+        #[arg(long)]
+        metadata_only: bool,
+        #[arg(short = 'i', long)]
+        ignore_case: bool,
+        #[arg(long, value_enum)]
+        kind: Option<RecordKind>,
         #[command(flatten)]
         filter: FilterArgs,
         #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=1000))]
@@ -222,6 +241,15 @@ impl CopyArgs {
 
 #[derive(Debug, Args)]
 pub struct RunArgs {
+    /// Combined stdout/stderr byte cap (default 64 MiB; maximum 1 GiB).
+    #[arg(long, env = "CPYREF_RUN_MAX_LOG_BYTES")]
+    pub max_log_bytes: Option<u64>,
+    /// Deadline including output-pipe draining (default 600 seconds; maximum 86400).
+    #[arg(long, env = "CPYREF_RUN_TIMEOUT_SECONDS")]
+    pub timeout: Option<u64>,
+    /// Free-space reserve in bytes (default 512 MiB), plus log packing headroom.
+    #[arg(long, env = "CPYREF_RUN_MIN_FREE_BYTES")]
+    pub min_free_bytes: Option<u64>,
     #[arg(long, default_value = "auto", value_parser = ["auto", "cargo", "none"])]
     pub parser: String,
     /// Require the saved source manifest to match before starting the command.

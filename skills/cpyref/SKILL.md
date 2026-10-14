@@ -80,6 +80,9 @@ retention requirements authorize deletion; there is no automatic expiry.
 
 Use `copy --note 'purpose'` for a short retrieval note (at most 4096 UTF-8 bytes).
 Use `list --limit 20 --source 'src/' --note 'purpose'` to find metadata in the agreed space;
+`search QUERY --json` searches saved byte bodies plus metadata, without expanding content; use
+`--metadata-only` to skip bodies, `--kind bytes|run|snapshot`, and `--source`/`--note` to narrow.
+Queries are literal and case sensitive unless `--ignore-case`; complete IDs are required for retrieval.
 `--json` provides structured output and `--offset` paginates. Do not switch spaces to search.
 
 Preview boundaries with `copy ... --dry-run`: it reports positions and sizes without saving.
@@ -158,3 +161,10 @@ For advanced matching or limits, run `cpyref copy --help` or consult the
 [command reference](https://github.com/LIghtJUNction/cpyref/blob/main/docs/cli-reference.md).
 For configuration, moved projects or explicit shared spaces, consult
 [project spaces](https://github.com/LIghtJUNction/cpyref/blob/main/docs/project-spaces.md).
+
+Run safety: combined stdout/stderr default cap is 64 MiB; timeout is 600 seconds including pipe drain.
+`run --max-log-bytes N --timeout SECONDS --min-free-bytes N` overrides `[run]` config defaults.
+The free-space reserve defaults to 512 MiB plus capture/packing headroom. No unlimited log/timeout mode.
+Timeout exits 124; log/disk protection exits 125. Preserve partial logs; `logs_complete=false` means
+counts are unknown even if a completed suite appears in the prefix. Never retry commands automatically.
+These protections do not impose a quota on files written by the command itself or sandbox escaped descendants.

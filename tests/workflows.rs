@@ -582,3 +582,183 @@ fn malformed_run_length_is_corruption_rather_than_an_overflow_panic() {
     assert_eq!(o.status.code(), Some(7));
     failure(o, "CORRUPT_REF");
 }
+
+#[cfg(unix)]
+#[test]
+fn snapshot_excludes_a_store_reached_through_an_ancestor_alias_before_and_after_creation() {
+    let f = Fixture::new();
+    let aliases = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(f.0.path(), aliases.path().join("alias")).unwrap();
+    let aliased_store = aliases.path().join("alias/new/nested/store");
+    let snapshot = success(
+        f.command()
+            .env("CPYREF_STORE", &aliased_store)
+            .args(["snapshot", "src"])
+            .output()
+            .unwrap(),
+    );
+    let id = run_reference(&snapshot);
+    assert_eq!(
+        success(
+            f.command()
+                .env("CPYREF_STORE", &aliased_store)
+                .args(["snapshot", "check", id])
+                .output()
+                .unwrap()
+        )["status"],
+        "unchanged"
+    );
+    let all = success(
+        f.command()
+            .env("CPYREF_STORE", &aliased_store)
+            .args(["snapshot", "."])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(all["file_count"], 2);
+    assert_eq!(
+        success(
+            f.command()
+                .env("CPYREF_STORE", &aliased_store)
+                .args(["snapshot", "check", run_reference(&all)])
+                .output()
+                .unwrap()
+        )["status"],
+        "unchanged"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn run_timeout_stops_sleeping_processes_and_inherited_pipes() {
+    for script in [
+        "printf started; sleep 30",
+        "printf started; sleep 30 & exit 0",
+        "trap '' TERM; sleep 30",
+    ] {
+        let f = Fixture::new();
+        let start = std::time::Instant::now();
+        let o = f.run(&["run", "--timeout", "1", "--", "sh", "-c", script]);
+        assert!(start.elapsed() < std::time::Duration::from_secs(6));
+        assert_eq!(
+            o.status.code(),
+            Some(124),
+            "{}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+        let v: Value = serde_json::from_slice(&o.stdout).unwrap();
+        assert_eq!(v["termination_reason"], "timeout");
+        assert_eq!(v["logs_complete"], false);
+        assert!(v["analysis"]["counts"].is_null());
+        assert!(f.json(&["logs", run_reference(&v), "--failed"])["analysis"]["counts"].is_null());
+    }
+}
+
+#[test]
+fn run_combined_log_cap_preserves_bounded_prefix_and_unknown_counts() {
+    let f = Fixture::new();
+    fs::write(f.source("large"), vec![b'x'; 32 * 1024]).unwrap();
+    let id = f.copy("large", &[]);
+    let o = f.child_run(&["--max-log-bytes", "100"], &["paste", &id]);
+    assert_eq!(
+        o.status.code(),
+        Some(125),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["termination_reason"], "log_limit");
+    assert_eq!(v["logs_complete"], false);
+    assert_eq!(
+        v["stdout_bytes"].as_u64().unwrap() + v["stderr_bytes"].as_u64().unwrap(),
+        100
+    );
+    assert!(v["analysis"]["counts"].is_null());
+    let saved = f.json(&["logs", run_reference(&v), "--stream", "stdout"]);
+    assert_eq!(saved["total_bytes"], 100);
+}
+
+#[test]
+fn run_limits_config_environment_cli_precedence_and_preflight() {
+    let f = Fixture::new();
+    let config = f.source("limits.toml");
+    fs::write(
+        &config,
+        "[run]\nmax_log_bytes = 2000\ntimeout_seconds = 2\nmin_free_bytes = 0\n",
+    )
+    .unwrap();
+    let o = f
+        .command()
+        .env_remove("CPYREF_NO_CONFIG")
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "run",
+            "--max-log-bytes",
+            "3000",
+            "--",
+            env!("CARGO_BIN_EXE_cpyref"),
+            "--version",
+        ])
+        .env("CPYREF_RUN_MAX_LOG_BYTES", "2500")
+        .env("CPYREF_RUN_TIMEOUT_SECONDS", "3")
+        .output()
+        .unwrap();
+    let v = success(o);
+    assert_eq!(v["limits"]["max_log_bytes"], 3000);
+    assert_eq!(v["limits"]["timeout_seconds"], 3);
+    assert_eq!(v["limits"]["min_free_bytes"], 0);
+    let out = f.run(&[
+        "run",
+        "--min-free-bytes",
+        "18446744073709551615",
+        "--",
+        "definitely-not-a-command",
+    ]);
+    failure(out, "DISK_SPACE");
+    failure(
+        f.run(&["run", "--timeout", "0", "--", "x"]),
+        "INVALID_ARGUMENT",
+    );
+    failure(
+        f.run(&["run", "--max-log-bytes", "0", "--", "x"]),
+        "INVALID_ARGUMENT",
+    );
+    fs::write(&config, "[run]\ntimeout_seconds = 0\n").unwrap();
+    failure(
+        f.command()
+            .env_remove("CPYREF_NO_CONFIG")
+            .args(["--config", config.to_str().unwrap(), "context"])
+            .output()
+            .unwrap(),
+        "CONFIG_ERROR",
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn run_caps_stdout_and_stderr_together_even_with_a_complete_test_summary() {
+    let f = Fixture::new();
+    let script = "printf 'running 1 test\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;\n'; i=0; while [ $i -lt 1000 ]; do printf 'out'; printf 'err' >&2; i=$((i+1)); done";
+    let o = f.run(&[
+        "run",
+        "--parser",
+        "cargo",
+        "--max-log-bytes",
+        "512",
+        "--",
+        "sh",
+        "-c",
+        script,
+    ]);
+    assert_eq!(
+        o.status.code(),
+        Some(125),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert!(v["stdout_bytes"].as_u64().unwrap() + v["stderr_bytes"].as_u64().unwrap() <= 512);
+    assert!(v["analysis"]["counts"].is_null());
+    assert!(f.json(&["logs", run_reference(&v), "--failed"])["analysis"]["counts"].is_null());
+}
