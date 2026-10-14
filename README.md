@@ -21,6 +21,12 @@ Arch Linux 可从 [AUR](https://aur.archlinux.org/packages/cpyref) 安装：`yay
 
 从 GitHub 源码安装可用 `cargo install --git https://github.com/LIghtJUNction/cpyref --locked`，克隆仓库后也可运行 `cargo install --path . --locked`。
 
+## Agent 技能
+
+配套 [CpyRef 技能](skills/cpyref/SKILL.md) 帮助 Agent 选择内容、传递编号、核对项目空间并处理歧义，需要先安装 `cpyref` 命令。
+
+在 Codex 中请求「从 `LIghtJUNction/cpyref` 安装 `skills/cpyref` 技能」。安装后下一轮即可使用 `$cpyref`，或让 Agent 在需要精确复制原文时自动选择。
+
 ## 基本用法
 
 ```sh
@@ -40,26 +46,26 @@ some-command | cpyref copy -
 复制成功时，stdout 只有一行短编号：
 
 ```text
-c8f12a093be47d
+c0123456789ab
 ```
 
 编号格式为 `c` 加 12 个小写十六进制字符。下面使用的是示例编号，实际操作请换成 `copy` 返回的编号，并保持同一项目和 namespace（分组名）。
 
 ```sh
 # 输出原始字节，不额外添加换行
-cpyref paste c8f12a093be47d
+cpyref paste c0123456789ab
 
 # 写入文件，默认拒绝覆盖已有文件
-cpyref paste c8f12a093be47d --output snippet.rs
+cpyref paste c0123456789ab --output snippet.rs
 
 # 明确允许替换已有普通文件
-cpyref paste c8f12a093be47d --output snippet.rs --force
+cpyref paste c0123456789ab --output snippet.rs --force
 
 # 查看来源、大小和摘要，不展开正文
-cpyref info c8f12a093be47d
+cpyref info c0123456789ab
 
 # 删除快照，也可使用 rm 子命令
-cpyref remove c8f12a093be47d
+cpyref remove c0123456789ab
 
 # 查看当前项目、分组和存储路径
 cpyref context
@@ -90,14 +96,14 @@ cpyref context
 ```sh
 # 同项目的多个 Agent 使用同一个分组
 cpyref --namespace review-team copy input.txt
-cpyref --namespace review-team paste c8f12a093be47d
+cpyref --namespace review-team paste c0123456789ab
 
 # 固定项目，避免切换工作目录后改变空间
 cpyref --project /work/project-a copy input.txt
 
 # 明确跨项目共享；各次调用需使用相同参数
 cpyref --scope shared --namespace team-build copy input.txt
-cpyref --scope shared --namespace team-build paste c8f12a093be47d
+cpyref --scope shared --namespace team-build paste c0123456789ab
 ```
 
 跨项目协作要求同机访问同一存储基目录，不提供远程同步。分组、配置、环境变量和旧版快照访问见[项目隔离与多 Agent 协作](docs/project-spaces.md)。

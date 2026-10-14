@@ -23,9 +23,12 @@ class PackagingTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         (self.root / "docs" / "nested").mkdir(parents=True)
+        (self.root / "skills" / "cpyref" / "agents").mkdir(parents=True)
         (self.root / "LICENSE").write_bytes(b"MIT license\n")
         (self.root / "README.md").write_bytes(b"# CpyRef\n")
         (self.root / "docs" / "nested" / "usage.md").write_bytes(b"usage\n")
+        (self.root / "skills" / "cpyref" / "SKILL.md").write_bytes(b"---\nname: cpyref\n---\n")
+        (self.root / "skills" / "cpyref" / "agents" / "openai.yaml").write_bytes(b"interface:\n  display_name: CpyRef\n")
         self.binary = self.root / "input-binary"
         self.binary.write_bytes(b"binary\x00\xff\n")
         self.output = self.root / "dist"
@@ -47,6 +50,10 @@ class PackagingTests(unittest.TestCase):
                     self.assertEqual(archive.getmember(base + "/cpyref").mode, 0o755)
                     self.assertEqual(archive.getmember(base + "/docs/nested").mode, 0o755)
                     self.assertEqual(archive.getmember(base + "/LICENSE").mode, 0o644)
+                    self.assertEqual(archive.extractfile(base + "/skills/cpyref/SKILL.md").read(), b"---\nname: cpyref\n---\n")
+                    self.assertEqual(archive.extractfile(base + "/skills/cpyref/agents/openai.yaml").read(), b"interface:\n  display_name: CpyRef\n")
+                    self.assertEqual(archive.getmember(base + "/skills/cpyref/agents").mode, 0o755)
+                    self.assertEqual(archive.getmember(base + "/skills/cpyref/agents/openai.yaml").mode, 0o644)
                     self.assertTrue(all(member.uid == member.gid == 0 for member in archive.getmembers()))
 
     def test_windows_zip_preserves_layout_bytes_and_unix_modes(self):
@@ -56,9 +63,13 @@ class PackagingTests(unittest.TestCase):
         with zipfile.ZipFile(result) as archive:
             self.assertEqual(archive.read(base + "/cpyref.exe"), b"binary\x00\xff\n")
             self.assertEqual(archive.read(base + "/docs/nested/usage.md"), b"usage\n")
+            self.assertEqual(archive.read(base + "/skills/cpyref/SKILL.md"), b"---\nname: cpyref\n---\n")
+            self.assertEqual(archive.read(base + "/skills/cpyref/agents/openai.yaml"), b"interface:\n  display_name: CpyRef\n")
             self.assertTrue(archive.getinfo(base + "/docs/nested/").is_dir())
             self.assertEqual(stat.S_IMODE(archive.getinfo(base + "/cpyref.exe").external_attr >> 16), 0o755)
             self.assertEqual(stat.S_IMODE(archive.getinfo(base + "/README.md").external_attr >> 16), 0o644)
+            self.assertEqual(stat.S_IMODE(archive.getinfo(base + "/skills/cpyref/agents/").external_attr >> 16), 0o755)
+            self.assertEqual(stat.S_IMODE(archive.getinfo(base + "/skills/cpyref/agents/openai.yaml").external_attr >> 16), 0o644)
             self.assertTrue(all(name.startswith(base + "/") for name in archive.namelist()))
 
     def test_invalid_versions_and_targets_cannot_create_outputs(self):
@@ -95,6 +106,30 @@ class PackagingTests(unittest.TestCase):
         os.utime(self.binary, (2000000000, 2000000000))
         second = package.create_archive(self.root, self.binary, package.TARGETS[0], "1.2.3", self.root / "another-dist")
         self.assertEqual(first.read_bytes(), second.read_bytes())
+
+    @unittest.skipIf(os.name == "nt", "creating symlinks on Windows requires privileges")
+    def test_skill_tree_and_ancestor_symlinks_are_rejected(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        for link in (self.root / "skills" / "cpyref" / "linked", self.root / "skills" / "cpyref" / "agents" / "linked"):
+            with self.subTest(link=link):
+                link.symlink_to(outside, target_is_directory=True)
+                try:
+                    with self.assertRaisesRegex(ValueError, "symlinks"):
+                        package.create_archive(self.root, self.binary, package.TARGETS[0], "1.2.3", self.output)
+                finally:
+                    link.unlink()
+        (self.root / "skills").rename(self.root / "real-skills")
+        (self.root / "skills").symlink_to(self.root / "real-skills", target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            package.create_archive(self.root, self.binary, package.TARGETS[0], "1.2.3", self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_incomplete_skill_is_rejected_before_output_creation(self):
+        (self.root / "skills" / "cpyref" / "agents" / "openai.yaml").unlink()
+        with self.assertRaisesRegex(ValueError, "regular file"):
+            package.create_archive(self.root, self.binary, package.TARGETS[0], "1.2.3", self.output)
+        self.assertFalse(self.output.exists())
 
 
 if __name__ == "__main__":

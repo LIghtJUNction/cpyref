@@ -7,6 +7,7 @@ import gzip
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 import subprocess
 import tarfile
@@ -62,20 +63,27 @@ def release_entries(root, binary, name, windows):
         (regular_file(root / "LICENSE"), "LICENSE", 0o644),
         (regular_file(root / "README.md"), "README.md", 0o644),
     ]
-    docs = root / "docs"
-    if docs.is_symlink() or not docs.is_dir():
-        raise ValueError(f"expected a documentation directory, not a symlink: {docs}")
     entries = [(None, PurePosixPath(name), 0o755)]
     entries.extend((source, PurePosixPath(name, relative), mode) for source, relative, mode in files)
-    entries.append((None, PurePosixPath(name, "docs"), 0o755))
-    for source in sorted(docs.rglob("*")):
-        if source.is_symlink():
-            raise ValueError(f"documentation must not contain symlinks: {source}")
-        relative = PurePosixPath(name, source.relative_to(root).as_posix())
-        if source.is_dir():
-            entries.append((None, relative, 0o755))
-        else:
-            entries.append((regular_file(source), relative, 0o644))
+    for directory in (PurePosixPath("docs"), PurePosixPath("skills/cpyref")):
+        # Check every ancestor too: skills/cpyref could otherwise traverse a
+        # symlink at skills even when cpyref itself is a real directory.
+        for depth in range(1, len(directory.parts) + 1):
+            relative = PurePosixPath(*directory.parts[:depth])
+            source = root / relative
+            if source.is_symlink() or not source.is_dir():
+                raise ValueError(f"expected a resource directory, not a symlink: {source}")
+            entries.append((None, PurePosixPath(name, relative), 0o755))
+        for source in sorted((root / directory).rglob("*")):
+            if source.is_symlink():
+                raise ValueError(f"release resources must not contain symlinks: {source}")
+            relative = PurePosixPath(name, source.relative_to(root).as_posix())
+            if source.is_dir():
+                entries.append((None, relative, 0o755))
+            else:
+                entries.append((regular_file(source), relative, 0o644))
+    regular_file(root / "skills" / "cpyref" / "SKILL.md")
+    regular_file(root / "skills" / "cpyref" / "agents" / "openai.yaml")
     return entries
 
 
@@ -151,7 +159,7 @@ def create_linux_packages(root, binary, target, version, out_dir, nfpm):
         raise ValueError("--linux-packages requires a Linux musl target")
     # Validate the same source tree used by the portable archive before nFPM's
     # tree traversal. The workflow verifies that the musl binary is static.
-    release_entries(root, binary, "cpyref", False)
+    entries = release_entries(root, binary, "cpyref", False)
     environment = os.environ.copy()
     environment.update(
         CPYREF_VERSION=version,
@@ -159,7 +167,6 @@ def create_linux_packages(root, binary, target, version, out_dir, nfpm):
         CPYREF_BINARY=str(binary.resolve()),
         CPYREF_LICENSE=str((root / "LICENSE").resolve()),
         CPYREF_README=str((root / "README.md").resolve()),
-        CPYREF_DOCS=str((root / "docs").resolve()),
     )
     formats = (("deb", ".deb"), ("rpm", ".rpm"), ("archlinux", ".pkg.tar.zst"))
     destinations = [out_dir / f"cpyref-{version}-{target}{suffix}" for _, suffix in formats]
@@ -168,6 +175,23 @@ def create_linux_packages(root, binary, target, version, out_dir, nfpm):
             raise FileExistsError(f"refusing to overwrite existing package: {destination}")
     out_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".cpyref-nfpm-", dir=out_dir) as temporary:
+        # nFPM's tree mode applies one file_info mode to both files and dirs.
+        # Stage validated resources with explicit modes so checkout permissions
+        # or a restrictive umask cannot make installed docs/skills unreadable.
+        content_root = Path(temporary) / "content"
+        for source, relative, mode in entries:
+            if len(relative.parts) < 2 or relative.parts[1] not in ("docs", "skills"):
+                continue
+            destination = content_root.joinpath(*relative.parts[1:])
+            if source is None:
+                destination.mkdir(parents=True, exist_ok=True)
+            else:
+                shutil.copyfile(source, destination)
+            destination.chmod(mode)
+        environment.update(
+            CPYREF_DOCS=str((content_root / "docs").resolve()),
+            CPYREF_SKILL=str((content_root / "skills" / "cpyref").resolve()),
+        )
         staged = []
         for (packager, _), destination in zip(formats, destinations):
             path = Path(temporary) / destination.name

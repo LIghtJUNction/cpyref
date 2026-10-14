@@ -41,6 +41,10 @@ contents:
     dst: /usr/share/doc/cpyref/docs
     type: tree
     expand: true
+  - src: ${CPYREF_SKILL}
+    dst: /usr/share/doc/cpyref/skills/cpyref
+    type: tree
+    expand: true
 
 deb:
   compression: xz

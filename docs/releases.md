@@ -27,17 +27,17 @@ yay -S cpyref
 
 Linux 二进制使用 musl 静态链接。Windows 使用 MSVC；macOS 分 Intel 与 Apple Silicon 两种构建。Windows/macOS 文件没有 Authenticode 或 Apple Developer ID 签名。
 
-每次 Release 都附带 `SHA256SUMS`，可在下载后核对文件摘要。压缩包也包含 MIT 许可证与使用文档。
+每次 Release 都附带 `SHA256SUMS`，可在下载后核对文件摘要。压缩包也包含 MIT 许可证、使用文档和 `skills/cpyref` 配套 Agent 技能。Linux 发行版包将技能放在 `/usr/share/doc/cpyref/skills/cpyref`。
 
 ## 发布新版本
 
 1. 修改 `Cargo.toml` 的版本号，并用 `cargo generate-lockfile` 更新 `Cargo.lock` 中的本包版本。
 2. 本地运行格式检查、测试、Clippy 和 `cargo publish --locked --dry-run`，提交并推送源码。
-3. 创建与包版本一致的 tag，例如版本 `0.1.1` 对应 `v0.1.1`，并推送：
+3. 创建与包版本一致的 tag，例如版本 `0.1.2` 对应 `v0.1.2`，并推送：
 
 ```sh
-git tag -a v0.1.1 -m 'CpyRef 0.1.1'
-git push origin v0.1.1
+git tag -a v0.1.2 -m 'CpyRef 0.1.2'
+git push origin v0.1.2
 ```
 
 推送 `v*` tag 会触发 `.github/workflows/release.yml`。工作流核对 tag 与 Cargo 版本，分别在六种原生运行环境中测试和构建，生成压缩包与 Linux 发行版包，并在全部构建成功后发布 GitHub Release 及摘要文件。

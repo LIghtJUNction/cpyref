@@ -15,7 +15,7 @@
 cpyref copy input.txt
 
 # 在项目 A 的子目录，使用实际返回的完整编号
-cpyref paste c8f12a093be47d --output result.txt
+cpyref paste c0123456789ab --output result.txt
 
 # 在项目 B 内使用这个编号，会返回 REF_NOT_FOUND
 ```
@@ -34,7 +34,7 @@ cpyref paste c8f12a093be47d --output result.txt
 ```sh
 # 同项目内的一个协作组；不与别的项目里同名组互通
 cpyref --namespace review-team copy input.txt
-cpyref --namespace review-team paste c8f12a093be47d
+cpyref --namespace review-team paste c0123456789ab
 
 # 同项目内不同 Agent 分开使用
 cpyref --namespace agent-a copy input.txt
@@ -45,7 +45,7 @@ cpyref --scope directory copy input.txt
 
 # 两个项目明确共用 team-build 空间
 cpyref --scope shared --namespace team-build copy input.txt
-cpyref --scope shared --namespace team-build paste c8f12a093be47d
+cpyref --scope shared --namespace team-build paste c0123456789ab
 ```
 
 `shared` 必须指定 namespace，不能悄悄选择一个默认公共空间。范围和 namespace 选错时，`paste`、`info`、`remove` 都不会扫描其他空间来找编号。
@@ -56,7 +56,7 @@ namespace 为 1 到 64 个小写 ASCII 字母、数字、`-` 或 `_`，首字符
 
 ```sh
 cpyref --project /work/project-a copy input.txt
-cpyref --project /work/project-a paste c8f12a093be47d --output result.txt
+cpyref --project /work/project-a paste c0123456789ab --output result.txt
 ```
 
 `--project` 必须指向一个已存在的目录，并且只能与 project 范围组合。它直接指定项目根，不再向上寻找另一个根。缺失路径、普通文件和空路径都会返回 `PROJECT_ERROR`，不会退回默认空间。
@@ -99,7 +99,7 @@ store = "team-data"
 
 ```sh
 cpyref --config /work/team.toml copy input.txt
-cpyref --config /work/team.toml paste c8f12a093be47d
+cpyref --config /work/team.toml paste c0123456789ab
 ```
 
 此例的存储基目录为 `/work/team-data`。配置中的相对 store 路径相对于配置文件所在目录，不随 Agent 当前目录变化。命令行和环境变量中的相对路径则相对于当前目录。不同目录运行的 Agent 共用 `CPYREF_STORE` 时，建议使用绝对路径。
@@ -139,8 +139,8 @@ BASE/
 旧版保存在基目录中的快照不会自动移动、删除或导入。明确访问它们：
 
 ```sh
-cpyref --no-config --scope global --namespace default info c8f12a093be47d
-cpyref --no-config --scope global --namespace default paste c8f12a093be47d --output old-content.txt
+cpyref --no-config --scope global --namespace default info c0123456789ab
+cpyref --no-config --scope global --namespace default paste c0123456789ab --output old-content.txt
 ```
 
 如旧版设置了自定义目录，同时传入相同 `--store`。之后可在目标项目内复制导出的文件，获得该项目空间的新编号。不要自动把全部旧数据复制到每个项目。
