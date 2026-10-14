@@ -1,0 +1,4 @@
+# Save as .cpyref.toml at a project root to share one group within that project.
+# This file does not share data with other projects.
+scope = "project"
+namespace = "default"

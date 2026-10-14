@@ -1,0 +1,6 @@
+# Use explicitly: cpyref --config /absolute/path/shared.toml copy input.txt
+# All participants must use the same storage base. This does not provide remote sync.
+scope = "shared"
+namespace = "team-build"
+# Optional store path, relative to this file unless absolute:
+# store = "team-data"
