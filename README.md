@@ -6,12 +6,12 @@
 
 默认按项目隔离，支持同机多 Agent 协作。支持 Linux、macOS 和 Windows，不依赖系统剪贴板或桌面环境。
 
-## 开发版本
+## 0.3.0
 
-当前开发分支面向 0.3.0，新增带目标哈希前置条件的 `insert` / `replace` 和写入前 `--redact-env` 脱敏。
+本版本新增带目标哈希前置条件的 `insert` / `replace` 和写入前 `--redact-env` 脱敏。
 完整引用 `handoff --format ref` / `receive` 自动携带空间和 SHA-256；`bundle` 将补丁、说明和测试收据按名称交接。见[交接用法](docs/workflows.md)。
 运行上限、磁盘余量检查和进程清理沿用并保留 0.2.2 主分支实现。新功能用法见[安全写入与运行限制](docs/hardening.md)。
-开发分支不代表已发布新安装包。
+管道输入可省略 `-`：`cat file.txt | cpyref copy`。配套 Skill 保持精简，按需使用引用。
 
 ## 安装
 
