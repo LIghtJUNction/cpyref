@@ -165,7 +165,7 @@ class PackagingTests(unittest.TestCase):
                                 cwd=self.root, capture_output=True, text=True, timeout=30,
                                 env={**os.environ, "CARGO_HOME": str(REPO / "target" / "cargo-home")})
         self.assertEqual(result.returncode, 0, result.stderr)
-        names = set(result.stdout.splitlines())
+        names = {name.replace("\\", "/") for name in result.stdout.splitlines()}
         self.assertIn("README.md", names)
         self.assertIn("docs/nested/usage.md", names)
         self.assertIn("skills/cpyref/SKILL.md", names)
