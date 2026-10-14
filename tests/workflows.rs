@@ -174,7 +174,7 @@ fn snapshot_explicit_files_are_deduplicated_and_store_and_git_are_excluded() {
     failure(
         f.command()
             .arg("snapshot")
-            .arg(outside.path().join("file"))
+            .arg(fs::canonicalize(outside.path().join("file")).unwrap())
             .output()
             .unwrap(),
         "INVALID_ARGUMENT",
