@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::{fs, io::Write, process::{Command, Output, Stdio}};
+use std::{fs, io::Write, path::PathBuf, process::{Command, Output, Stdio}};
 use tempfile::TempDir;
 
 struct Fixture {
@@ -14,11 +14,22 @@ impl Fixture {
     fn command(&self) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_cpyref"));
         command.current_dir(self.dir.path()).env("CPYREF_STORE", self.dir.path().join("store"));
+        for key in ["CPYREF_SCOPE", "CPYREF_NAMESPACE", "CPYREF_PROJECT", "CPYREF_CONFIG"] {
+            command.env_remove(key);
+        }
+        command.env("CPYREF_NO_CONFIG", "true");
         command
     }
 
     fn run(&self, args: &[&str]) -> Output {
         self.command().args(args).output().unwrap()
+    }
+
+    fn store_path(&self) -> PathBuf {
+        let output = self.run(&["context"]);
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        let context: Value = serde_json::from_slice(&output.stdout).unwrap();
+        PathBuf::from(context["store_path"].as_str().unwrap())
     }
 
     fn copy(&self, data: &[u8], extra: &[&str]) -> String {
@@ -101,6 +112,7 @@ fn json_success_and_info_do_not_expand_payload() {
     let output = f.run(&["copy", "input", "--json"]);
     assert!(output.status.success());
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["context"]["scope"], "project");
     let id = value["reference"]["id"].as_str().unwrap();
     let info = f.run(&["info", id]);
     assert!(info.status.success());
@@ -138,7 +150,7 @@ fn output_is_not_overwritten_without_force() {
 fn corruption_is_detected_before_any_paste_output() {
     let f = Fixture::new();
     let id = f.copy(b"payload", &[]);
-    let path = f.dir.path().join("store").join(format!("{id}.ref"));
+    let path = f.store_path().join(format!("{id}.ref"));
     let mut bytes = fs::read(&path).unwrap();
     *bytes.last_mut().unwrap() ^= 1;
     fs::write(path, bytes).unwrap();
@@ -151,7 +163,7 @@ fn truncated_and_appended_records_are_rejected() {
     for append in [true, false] {
         let f = Fixture::new();
         let id = f.copy(b"payload", &[]);
-        let path = f.dir.path().join("store").join(format!("{id}.ref"));
+        let path = f.store_path().join(format!("{id}.ref"));
         let mut bytes = fs::read(&path).unwrap();
         if append { bytes.push(0); } else { bytes.truncate(4); }
         fs::write(path, bytes).unwrap();
@@ -209,6 +221,7 @@ fn help_succeeds_without_creating_a_store() {
     let output = f.run(&["--help"]);
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Usage:"));
     assert!(!f.dir.path().join("store").exists());
 }
 
@@ -218,7 +231,7 @@ fn store_has_private_permissions_and_rejects_symlinks() {
     use std::os::unix::fs::{symlink, PermissionsExt};
     let f = Fixture::new();
     let id = f.copy(b"private", &[]);
-    let store = f.dir.path().join("store");
+    let store = f.store_path();
     assert_eq!(fs::metadata(&store).unwrap().permissions().mode() & 0o777, 0o700);
     let path = store.join(format!("{id}.ref"));
     assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);

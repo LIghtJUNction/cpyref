@@ -1,13 +1,12 @@
 use clap::{Args, Parser, Subcommand};
-use cpyref::{select::Spec, DEFAULT_MAX_BYTES};
+use cpyref::{context::Options, select::Spec, DEFAULT_MAX_BYTES};
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 #[command(version, about = "Copy exact bytes once. Paste them by a short reference.")]
 pub struct Cli {
-    /// Snapshot directory. Defaults to the current user's local data directory.
-    #[arg(long, global = true, env = "CPYREF_STORE")]
-    pub store: Option<PathBuf>,
+    #[command(flatten)]
+    pub context: Options,
     #[command(subcommand)]
     pub command: Command,
 }
@@ -31,6 +30,8 @@ pub enum Command {
     /// Delete one saved snapshot by its complete reference.
     #[command(alias = "rm")]
     Remove { id: String },
+    /// Show the selected project, namespace, store, and config files; never creates a store.
+    Context,
 }
 
 #[derive(Debug, Args)]
@@ -87,7 +88,7 @@ pub struct CopyArgs {
     /// Input read limit in bytes. Hard maximum: 134217728 (128 MiB).
     #[arg(long, default_value_t = DEFAULT_MAX_BYTES)]
     pub max_bytes: usize,
-    /// Return JSON metadata on success instead of only the reference.
+    /// Return JSON metadata and selected space on success instead of only the reference.
     #[arg(long)]
     pub json: bool,
 }

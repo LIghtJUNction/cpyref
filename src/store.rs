@@ -2,7 +2,7 @@ use crate::{error::{Error, Result}, select::Span, MAX_BYTES};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{fs::{self, File}, io::{Read, Write}, path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
+use std::{fs::{self, File}, io::{Read, Write}, path::{Component, Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
 use tempfile::NamedTempFile;
 
 const MAGIC: &[u8; 8] = b"CPYREF\x01\n";
@@ -21,6 +21,7 @@ pub struct Metadata {
 
 #[derive(Debug, Clone)]
 pub struct Store {
+    base: PathBuf,
     root: PathBuf,
 }
 
@@ -36,9 +37,53 @@ fn valid_id(id: &str) -> bool {
     id.len() == 13 && id.starts_with('c') && id.as_bytes()[1..].iter().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(b))
 }
 
+fn missing_reference() -> Error {
+    Error::new("REF_NOT_FOUND", 6, "The reference does not exist in this store.")
+}
+
+fn unsafe_store() -> Error {
+    Error::new("UNSAFE_STORE", 5, "The storage base and all managed subdirectories must be real, private directories, not files or symbolic links.")
+}
+
+fn check_directory(path: &Path, allow_missing: bool) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(e) if allow_missing && e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(Error::io("Open store directory", e)),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(unsafe_store());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        // Reject junctions and other reparse points within the managed store tree as well.
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err(unsafe_store());
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err(Error::new("UNSAFE_STORE", 5, "The store must not be accessible by group or other users; use private directories with mode 0700."));
+        }
+    }
+    Ok(())
+}
+
 impl Store {
+    /// Low-level exact directory API. CLI callers use Context for project isolation.
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self { base: root.clone(), root }
+    }
+
+    pub fn scoped(base: PathBuf, root: PathBuf) -> Result<Self> {
+        let relative = root.strip_prefix(&base).map_err(|_| unsafe_store())?;
+        if relative.components().any(|part| !matches!(part, Component::Normal(_))) {
+            return Err(unsafe_store());
+        }
+        Ok(Self { base, root })
     }
 
     pub fn default_root() -> Result<PathBuf> {
@@ -47,22 +92,20 @@ impl Store {
         })
     }
 
-    fn check_root(&self) -> Result<()> {
-        let metadata = fs::symlink_metadata(&self.root).map_err(|e| Error::io("Open store directory", e))?;
-        if metadata.file_type().is_symlink() || !metadata.is_dir() {
-            return Err(Error::new("UNSAFE_STORE", 5, "The store root must be a real directory, not a symbolic link."));
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if metadata.permissions().mode() & 0o077 != 0 {
-                return Err(Error::new("UNSAFE_STORE", 5, "The store must not be accessible by group or other users; use a private directory with mode 0700."));
-            }
+    fn check_root(&self, allow_missing: bool) -> Result<()> {
+        let relative = self.root.strip_prefix(&self.base).map_err(|_| unsafe_store())?;
+        let mut path = self.base.clone();
+        check_directory(&path, allow_missing)?;
+        for component in relative.components() {
+            path.push(component);
+            check_directory(&path, allow_missing)?;
         }
         Ok(())
     }
 
     fn prepare(&self) -> Result<()> {
+        // Check existing ancestors before recursive creation so a symlink cannot redirect a space.
+        self.check_root(true)?;
         let mut builder = fs::DirBuilder::new();
         builder.recursive(true);
         #[cfg(unix)]
@@ -70,15 +113,23 @@ impl Store {
             use std::os::unix::fs::DirBuilderExt;
             builder.mode(0o700);
         }
-        builder.create(&self.root).map_err(|e| Error::io("Create store directory", e))?;
-        self.check_root()
+        builder.create(&self.root).map_err(|e| {
+            if matches!(e.kind(), std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::NotADirectory) {
+                unsafe_store()
+            } else {
+                Error::io("Create store directory", e)
+            }
+        })?;
+        self.check_root(false)
     }
 
     fn path(&self, id: &str) -> Result<PathBuf> {
         if !valid_id(id) {
             return Err(Error::new("INVALID_REF", 4, "Use the complete reference: c followed by 12 lowercase hex digits."));
         }
-        self.check_root()?;
+        self.check_root(false).map_err(|error| {
+            if error.code == "FILE_NOT_FOUND" { missing_reference() } else { error }
+        })?;
         Ok(self.root.join(format!("{id}.ref")))
     }
 
@@ -129,16 +180,10 @@ impl Store {
 
     fn open(&self, id: &str) -> Result<(File, Metadata)> {
         // Validate before touching the filesystem, and never resolve shortened prefixes.
-        if !valid_id(id) {
-            return Err(Error::new("INVALID_REF", 4, "Use the complete reference: c followed by 12 lowercase hex digits."));
-        }
-        if !self.root.try_exists().map_err(|e| Error::io("Check store", e))? {
-            return Err(Error::new("REF_NOT_FOUND", 6, "The reference does not exist in this store."));
-        }
         let path = self.path(id)?;
         let metadata = fs::symlink_metadata(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                Error::new("REF_NOT_FOUND", 6, "The reference does not exist in this store.")
+                missing_reference()
             } else {
                 Error::io("Read reference", e)
             }
@@ -192,7 +237,7 @@ impl Store {
         let path = self.path(id)?;
         fs::remove_file(path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                Error::new("REF_NOT_FOUND", 6, "The reference does not exist in this store.")
+                missing_reference()
             } else {
                 Error::io("Remove snapshot", e)
             }

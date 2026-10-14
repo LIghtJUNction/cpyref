@@ -2,7 +2,7 @@ mod cli;
 
 use clap::{error::ErrorKind, Parser};
 use cli::{Cli, Command};
-use cpyref::{error::{Error, Result}, select::select, store::{write_output, Store}, MAX_BYTES};
+use cpyref::{context::Context, error::{Error, Result}, select::select, store::write_output, MAX_BYTES};
 use serde::Serialize;
 use serde_json::json;
 use std::{fs::File, io::{self, Read, Write}, path::Path, process::ExitCode};
@@ -35,13 +35,9 @@ fn print_json(value: &impl Serialize) -> Result<()> {
     writeln!(out).map_err(|e| Error::io("Write stdout", e))
 }
 
-fn run(cli: Cli) -> Result<()> {
-    let root = match cli.store {
-        Some(path) => path,
-        None => Store::default_root()?,
-    };
-    let store = Store::new(root);
-    match cli.command {
+fn execute(command: Command, context: &Context) -> Result<()> {
+    let store = context.store()?;
+    match command {
         Command::Copy(args) => {
             let data = read_input(&args.source, args.max_bytes)?;
             let span = select(&data, &args.spec())?;
@@ -49,13 +45,12 @@ fn run(cli: Cli) -> Result<()> {
             let source = if args.source == Path::new("-") {
                 "<stdin>".to_owned()
             } else {
-                // Record the path used to open the file, not a later re-resolved symlink target.
-                std::env::current_dir().map_err(|e| Error::io("Read current directory", e))?
-                    .join(&args.source).to_string_lossy().into_owned()
+                // The selected project does not change where relative input paths are opened.
+                context.cwd.join(&args.source).to_string_lossy().into_owned()
             };
             let metadata = store.put(&data[range], source, span)?;
             if args.json {
-                print_json(&json!({"ok": true, "reference": metadata}))
+                print_json(&json!({"ok": true, "reference": metadata, "context": context.report()}))
             } else {
                 writeln!(io::stdout().lock(), "{}", metadata.id).map_err(|e| Error::io("Write reference", e))
             }
@@ -70,7 +65,13 @@ fn run(cli: Cli) -> Result<()> {
         }
         Command::Info { id } => print_json(&store.info(&id)?),
         Command::Remove { id } => store.remove(&id),
+        Command::Context => print_json(&context.report()),
     }
+}
+
+fn run(cli: Cli) -> Result<()> {
+    let context = Context::resolve(&cli.context)?;
+    execute(cli.command, &context).map_err(|error| context.annotate(error))
 }
 
 fn report(error: Error) -> ExitCode {
