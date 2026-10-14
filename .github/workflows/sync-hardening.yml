@@ -1,4 +1,4 @@
-name: Reconcile and verify current main
+name: Finalize safety fixes
 
 on:
   push:
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  reconcile:
+  finalize:
     if: github.ref == 'refs/heads/feat/safe-edit-run-limits'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -22,176 +22,95 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Preserve inspected main changes
+      - name: Preserve inspected 0.2.2 updates
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          MAIN=ee3fd551eeb868f11c5a33a32c85b1bedc16a615
+          MAIN=7c20b63b0724663803e8cf7efdbcaf63c686de5a
           git fetch --no-tags origin "$MAIN"
           set +e
           git merge --no-commit --no-ff "$MAIN"
           RESULT=$?
           set -e
           test "$RESULT" -le 1
-          git checkout "$MAIN" -- Cargo.toml Cargo.lock README.md docs/workflows.md skills/cpyref/SKILL.md src/cli.rs src/lib.rs src/main.rs src/runner.rs src/store.rs src/workflows.rs src/context.rs src/snapshot.rs tests/workflows.rs
-          test -z "$(git diff --name-only --diff-filter=U)"
-      - name: Layer edits and redaction without replacing main guards
+          # Only the independently advanced development version may conflict.
+          python3 - <<'PY'
+          import subprocess
+          conflicts = subprocess.check_output(['git', 'diff', '--name-only', '--diff-filter=U'], text=True).splitlines()
+          if set(conflicts) - {'Cargo.toml', 'Cargo.lock'}:
+              raise SystemExit(f'Unexpected concurrent changes: {conflicts}')
+          for path in conflicts:
+              subprocess.run(['git', 'checkout', '--ours', '--', path], check=True)
+              subprocess.run(['git', 'add', path], check=True)
+          PY
+      - name: Fix compatibility and strengthen regression checks
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          def replace(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              if text.count(old) != 1:
-                  raise SystemExit(f'{path}: expected one exact anchor, found {text.count(old)}')
-              p.write_text(text.replace(old, new, 1))
-
-          Path('src/run_guard.rs').unlink()
-          p = Path('src/lib.rs')
-          p.write_text(p.read_text() + '\npub mod edit;\npub mod redact;\n')
-          replace('Cargo.toml', 'version = "0.2.1"', 'version = "0.3.0"')
-          replace('src/cli.rs', 'pub enum Command {\n', '''pub enum Command {
-              /// Insert saved bytes at one explicit target position. Writing requires a target hash.
-              Insert(Box<cpyref::edit::Args>),
-              /// Replace a unique target selection with saved bytes. Writing requires a target hash.
-              Replace(Box<cpyref::edit::Args>),
-          ''')
-          replace('src/cli.rs', 'pub struct RunArgs {\n', '''pub struct RunArgs {
-              /// Redact this environment variable's exact value from logs and stored argv before saving.
-              #[arg(long)]
-              pub redact_env: Vec<String>,
-          ''')
-          replace('src/main.rs', '    match command {\n', '''    match command {
-                  Command::Insert(args) => print_json(&cpyref::edit::execute(context, &args, false)?),
-                  Command::Replace(args) => print_json(&cpyref::edit::execute(context, &args, true)?),
-          ''')
-          replace('src/store.rs', '    pub fn put_with_options(\n', '''    pub(crate) fn edit_lock(&self) -> Result<File> {
-                  self.prepare()?;
-                  self.lock()
-              }
-
-              pub fn put_with_options(
-          ''')
-          replace('src/workflows.rs', '                inherit_stdin: args.inherit_stdin,', '                inherit_stdin: args.inherit_stdin,\n                redact_env: args.redact_env,')
-          replace('src/runner.rs', 'pub struct RunOptions {\n', 'pub struct RunOptions {\n    pub redact_env: Vec<String>,\n')
-          replace('src/runner.rs', 'pub struct RunRecord {\n', 'pub struct RunRecord {\n    #[serde(default)]\n    pub redacted_env: Vec<String>,\n')
-          replace('src/runner.rs', '    let store = context.store()?;', '    let redaction = crate::redact::Prepared::new(&options.redact_env)?;\n    let store = context.store()?;')
-          replace('src/runner.rs', 'struct CaptureState {\n', 'struct CaptureState {\n    raw_bytes: AtomicU64,\n')
-          replace('src/runner.rs', '    let state = Arc::new(CaptureState {\n', '    let state = Arc::new(CaptureState {\n        raw_bytes: AtomicU64::new(0),\n')
           p = Path('src/runner.rs')
           text = p.read_text()
-          start = text.index('fn capture(\n')
-          end = text.index('#[cfg(unix)]\nfn cancellable', start)
+          start = text.index('fn reserve(')
+          end = text.index('\nfn capture(', start)
           text = text[:start] + '''fn reserve(counter: &AtomicU64, cap: u64, requested: usize) -> usize {
-              let previous = counter.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |used| {
-                  Some(used.saturating_add(requested as u64).min(cap))
-              }).expect("infallible byte reservation");
-              (cap - previous).min(requested as u64) as usize
-          }
-
-          fn capture(
-              mut pipe: impl Read,
-              mut file: File,
-              state: Arc<CaptureState>,
-              cap: u64,
-              mut redactor: crate::redact::Redactor,
-          ) -> io::Result<()> {
-              let result = (|| {
-                  let mut buffer = [0_u8; 64 * 1024];
-                  while !state.cancel.load(Ordering::SeqCst) && state.reason.load(Ordering::SeqCst) == 0 {
-                      let n = match pipe.read(&mut buffer) {
-                          Ok(n) => n,
-                          Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                          Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                              std::thread::sleep(Duration::from_millis(10));
-                              continue;
-                          }
-                          Err(e) => return Err(e),
-                      };
-                      if state.cancel.load(Ordering::SeqCst) || state.reason.load(Ordering::SeqCst) != 0 {
-                          break;
-                      }
-                      let allowed = reserve(&state.raw_bytes, cap, n);
-                      let bytes = redactor.feed(&buffer[..allowed], n == 0);
-                      let keep = reserve(&state.bytes, cap, bytes.len());
-                      file.write_all(&bytes[..keep])?;
-                      if allowed < n || keep < bytes.len() {
-                          state.stop(1);
-                          break;
-                      }
-                      if n == 0 {
-                          break;
-                      }
+              let mut used = counter.load(Ordering::SeqCst);
+              loop {
+                  let allowed = cap.saturating_sub(used).min(requested as u64);
+                  match counter.compare_exchange(used, used + allowed, Ordering::SeqCst, Ordering::SeqCst) {
+                      Ok(_) => return allowed as usize,
+                      Err(current) => used = current,
                   }
-                  // A cancelled stream drops its pending original suffix, never flushing it raw.
-                  file.sync_all()
-              })();
-              if result.is_err() {
-                  state.stop(2);
               }
-              result
           }
           ''' + text[end:]
+          assert 'Re-read only after both completions' in text, 'Expected the newer main EOF/guard fix'
           p.write_text(text)
-          replace('src/runner.rs', '    let out_thread = std::thread::spawn(move || capture(out, out_file, out_state, cap));', '    let out_redactor = redaction.stream();\n    let out_thread = std::thread::spawn(move || capture(out, out_file, out_state, cap, out_redactor));')
-          replace('src/runner.rs', '    let err_thread = std::thread::spawn(move || capture(err, err_file, err_state, cap));', '    let err_redactor = redaction.stream();\n    let err_thread = std::thread::spawn(move || capture(err, err_file, err_state, cap, err_redactor));')
-          replace('src/runner.rs', '            command: options.command.clone(),', '            command: redaction.command(&options.command),\n            redacted_env: redaction.names.clone(),')
-          replace('src/runner.rs', '        "limits": record.limits, "termination_reason": record.termination_reason,', '        "limits": record.limits, "termination_reason": record.termination_reason, "redacted_env": record.redacted_env,')
+          for name in ('README.md', 'docs/hardening.md'):
+              p = Path(name)
+              p.write_text(p.read_text().replace('0.2.1 主分支', '0.2.2 主分支'))
           p = Path('tests/test_hardening.py')
-          p.write_text(p.read_text().replace('stop_reason', 'termination_reason'))
-          replace('README.md', '## 安装\n', '''## 开发版本
+          text = p.read_text()
+          anchor = '\n\nif __name__ == "__main__":'
+          assert text.count(anchor) == 1
+          additional = '''
+              def test_redaction_expansion_is_limited_before_disk_write(self):
+                  self.env["DEMO_SECRET"] = "x"
+                  result = self.call("run", "--max-log-bytes", 16, "--redact-env", "DEMO_SECRET", "--", sys.executable,
+                                     "-c", "import sys; sys.stdout.write('x'*8)")
+                  self.assertEqual(result.returncode, 125, result.stderr)
+                  report = json.loads(result.stdout)
+                  self.assertEqual(report["termination_reason"], "log_limit")
+                  self.assertFalse(report["logs_complete"])
+                  self.assertLessEqual(report["stdout_bytes"] + report["stderr_bytes"], 16)
 
-          当前开发分支面向 0.3.0，新增带目标哈希前置条件的 `insert` / `replace` 和写入前 `--redact-env` 脱敏。
-          运行上限、磁盘余量检查和进程清理沿用并保留 0.2.1 主分支实现。新功能用法见[安全写入与运行限制](docs/hardening.md)。
-          开发分支不代表已发布新安装包。
-
-          ## 安装
-          ''')
-          p = Path('docs/workflows.md')
-          text = p.read_text().replace('本轮不提供自动插入、替换或 patch，也不改变 paste --force 的整文件输出行为。', '局部插入和替换由 insert/replace 提供，要求明确目标哈希，见 hardening.md；paste --force 仍为整文件输出。')
-          p.write_text(text + '\n明确敏感值的写入前处理见 [hardening.md](hardening.md)：`run --redact-env NAME` 只处理明确指定值，处理后的日志不再声称是原始字节。\n')
-          p = Path('skills/cpyref/SKILL.md')
-          p.write_text(p.read_text() + '''\n## Safe edits and explicit redaction (0.3.0 development)
-
-          Use `insert` or `replace` only for an authorized edit with a complete bytes reference.
-          Preview with `--dry-run`, inspect positions and sizes, then pass `before_sha256` using
-          `--expect-sha256` on the same operation. Do not bypass TARGET_CHANGED or hide AMBIGUOUS.
-          No newlines or source-language structure are inferred.
-
-          Keep the existing run timeout, byte budget and free-space checks. Do not disable them.
-          `--redact-env NAME` replaces the selected environment value in logs and stored argv
-          before disk writes. Values split between reads are handled. Missing/invalid settings
-          fail before execution. No automatic secret detection, encryption or protection of
-          encoded values, path metadata or child-created files is provided. Redacted records
-          are not byte-exact original output. Check redacted_env and logs_complete separately.
-          ''')
-          p = Path('docs/hardening.md')
-          text = p.read_text().replace('（0.2.0）', '（0.3.0 开发版）')
-          text = text.replace('这些功能属于 0.2.0 源码。0.1.1 发布包不包含它们。', '局部编辑与明确脱敏属于 0.3.0 开发分支；运行上限、磁盘检查和进程清理沿用 0.2.1 主分支。')
-          text = text.replace('默认 `--timeout 900`', '默认 `--timeout 600`')
-          text = text.replace('明确设置某一限制为 `0` 才关闭它。例如 `--timeout 0` 只关闭超时，并不会同时关闭日志上限。关闭限制前要评估命令的行为和可用磁盘。', '运行上限不能关闭。超时允许 1–86400 秒，日志上限允许 1 字节–1 GiB；`0` 会被拒绝。')
-          text = text.replace('stop_reason', 'termination_reason')
-          text = text.replace('这是整个存储的总磁盘配额', '这是整个存储的总磁盘配额')
-          marker = '到达限制后，工具尝试终止所创建的进程组'
-          text = text.replace(marker, '启动前及运行中检查可用空间。默认保留 512 MiB，并额外预留日志打包空间；可用 `--min-free-bytes` 调整保留量。保留了主分支的磁盘检查，不用日志条数代替字节预算。\n\n' + marker)
-          p.write_text(text)
-          print('Preserved newer main guards, search, packaging and snapshot changes; layered edits and redaction only.')
+              def test_fast_finished_child_cannot_hide_limit(self):
+                  for _ in range(10):
+                      result = self.call("run", "--max-log-bytes", 64, "--", sys.executable,
+                                         "-c", "import os; os.write(1,b'z'*65)")
+                      self.assertEqual(result.returncode, 125, result.stderr)
+                      report = json.loads(result.stdout)
+                      self.assertEqual(report["termination_reason"], "log_limit")
+                      self.assertFalse(report["logs_complete"])
+          '''
+          # Preserve four-space class indentation from the workflow literal.
+          p.write_text(text.replace(anchor, '\n' + additional + anchor))
           PY
-      - name: Install Rust and update version lock
-        run: rustup toolchain install stable --profile minimal --component clippy --component rustfmt && rustup default stable && cargo metadata --format-version 1 > /dev/null && cargo fmt --all
-      - name: Commit the reconciled work branch
+      - name: Format, lock and retain source changes
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          git add src tests Cargo.toml Cargo.lock README.md docs skills
-          git commit -m 'merge: retain main 0.2.1 guards and layer safe edits and redaction'
+          rustup toolchain install stable --profile minimal --component clippy --component rustfmt
+          rustup default stable
+          cargo metadata --format-version 1 > /dev/null
+          cargo fmt --all
+          python3 -m py_compile tests/test_hardening.py
+          git add src tests/test_hardening.py Cargo.toml Cargo.lock README.md docs
+          git commit -m 'fix: retain 0.2.2 guards and use portable atomic reservations'
           AUTH=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
           git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $AUTH" push origin HEAD:feat/safe-edit-run-limits
           unset AUTH GH_TOKEN
           git rev-parse HEAD
-      - name: Verify reconciled source
-        run: cargo test --locked --all-targets && cargo clippy --locked --all-targets -- -D warnings && cargo build --locked && python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Verify final Linux behavior
+        run: cargo fmt --all -- --check && cargo test --locked --all-targets && cargo clippy --locked --all-targets -- -D warnings && cargo build --locked && python3 -m unittest discover -s tests -p 'test_*.py' -v
