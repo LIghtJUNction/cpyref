@@ -18,7 +18,7 @@ yay -S cpyref
 
 | 系统 | 格式 | 安装方式 |
 | --- | --- | --- |
-| Debian / Ubuntu | `.deb` | `sudo apt install ./cpyref_*.deb`，选择与机器架构对应的单个文件 |
+| Debian / Ubuntu | `.deb` | `sudo apt install ./cpyref-*.deb`，选择与机器架构对应的单个文件 |
 | Fedora / RHEL 系 | `.rpm` | `sudo dnf install ./cpyref*.rpm`，选择与机器架构对应的单个文件 |
 | Arch Linux | `.pkg.tar.zst` | `sudo pacman -U ./cpyref*.pkg.tar.zst`，选择与机器架构对应的单个文件 |
 | 通用 Linux | `.tar.gz` | 解压后把 `cpyref` 放入 PATH 中的目录 |
@@ -42,7 +42,7 @@ git push origin v0.1.1
 
 推送 `v*` tag 会触发 `.github/workflows/release.yml`。工作流核对 tag 与 Cargo 版本，分别在六种原生运行环境中测试和构建，生成压缩包与 Linux 发行版包，并在全部构建成功后发布 GitHub Release 及摘要文件。
 
-如果构建失败，先修正问题；未发布的 tag 可通过 GitHub Actions 的手动入口选择该 tag 重试。已公开 Release 的文件不会被自动覆盖。
+网络等临时故障可通过 GitHub Actions 的手动入口选择原 tag 重试。如果需要修改源码或工作流，更新版本并创建新 tag。已公开 Release 的文件不会被自动覆盖。
 
 crates.io 和 AUR 独立发布，不会使用 GitHub Actions 中的仓库令牌自动上传：
 
