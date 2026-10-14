@@ -2,7 +2,7 @@ name: Rust CI
 
 on:
   push:
-    branches: [main, 'feat/**']
+    branches: [main]
   pull_request:
 
 permissions:
@@ -22,7 +22,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
       - name: Install stable Rust
         run: rustup toolchain install stable --profile minimal --component clippy
       - name: Select stable Rust
