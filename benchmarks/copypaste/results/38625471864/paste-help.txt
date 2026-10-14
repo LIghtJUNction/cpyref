@@ -1,0 +1,18 @@
+Write the saved bytes, without adding a newline
+
+Usage: cpyref paste [OPTIONS] <ID>
+
+Arguments:
+  <ID>  
+
+Options:
+      --max-entries <MAX_ENTRIES>  Maximum references per selected space; 0 means unlimited [env: CPYREF_MAX_ENTRIES=]
+  -o, --output <OUTPUT>            Write to a file instead of stdout. Existing files are protected by default
+      --force                      Replace an existing regular output file
+      --store <STORE>              Storage base. Project isolation still applies; global scope uses this path directly [env: CPYREF_STORE=]
+      --scope <SCOPE>              Clipboard scope. Default: project. Shared/global access must be explicitly configured [env: CPYREF_SCOPE=] [possible values: project, directory, shared, global]
+      --namespace <NAMESPACE>      Space within the scope, e.g. default, agent-a, or review-team. Required for shared scope [env: CPYREF_NAMESPACE=]
+      --project <PROJECT>          Use this existing directory as the project root; does not change input/output paths [env: CPYREF_PROJECT=]
+      --config <CONFIG>            Explicit trusted TOML config; replaces automatic user and project config files [env: CPYREF_CONFIG=]
+      --no-config                  Ignore config file settings. Project marker discovery still applies [env: CPYREF_NO_CONFIG=]
+  -h, --help                       Print help

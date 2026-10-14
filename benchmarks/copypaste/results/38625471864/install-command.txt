@@ -1,0 +1,1 @@
+cargo install --git https://github.com/LIghtJUNction/cpyref --rev 8d649a45e565387ee58150a13fc082864183aad1 --locked --root /home/runner/work/_temp/cpyref-installed

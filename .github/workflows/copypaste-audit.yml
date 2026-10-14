@@ -1,0 +1,119 @@
+name: CopyPaste Evidence Audit
+on:
+  push:
+    branches: [bench/copy-paste-v1]
+    paths: ['.github/workflows/copypaste-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Recompute aggregates from every original JSONL row
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import collections, hashlib, json, math, os, pathlib, statistics, subprocess
+          root = pathlib.Path('benchmarks/copypaste/results/38625471864')
+          raw = (root / 'raw.jsonl').read_bytes()
+          rows = [json.loads(line) for line in raw.splitlines()]
+          manifest = json.loads((root / 'manifest.json').read_text())
+          summary = json.loads((root / 'summary.json').read_text())
+          meta = manifest['metadata']
+          assert meta == summary['metadata']
+          tasks = {t['id']: t for t in manifest['tasks']}
+          assert len(tasks) == meta['unique_tasks'] == 35
+          repeats = meta['repeats']
+          expected = set()
+          for name, task in tasks.items():
+              arms = ['cpyref', 'python_bytes', 'inline_base64']
+              if not task['options'] and task['lifecycle'] == 'normal' and task['operation'] == 'new' and not task['expected_exit']:
+                  arms.append('native_cp')
+              expected.update((name, arm, rep) for arm in arms for rep in range(repeats))
+          actual = {(r['task'], r['arm'], r['repeat']) for r in rows}
+          assert len(rows) == len(actual) and actual == expected
+          metrics = ('argv_bytes', 'stdin_bytes', 'stdout_bytes', 'stderr_bytes')
+          groups = collections.defaultdict(list)
+          totals = {}
+          outcomes = collections.defaultdict(lambda: {'completed': 0, 'correct_rejections': 0, 'unsupported': 0})
+          for row in rows:
+              task = tasks[row['task']]
+              assert row['seed'] == meta['seed']
+              assert row['expected_exit'] == task['expected_exit']
+              assert row['source_bytes'] == task['source_bytes']
+              assert row['selected_bytes'] == task['selected_bytes']
+              unsupported = row['arm'] == 'inline_base64' and task['lifecycle'] in ('other_project', 'other_namespace', 'corrupt')
+              assert row['supported'] == (not unsupported)
+              assert row['pass'] is (None if unsupported else True)
+              assert row['status'] == ('unsupported' if unsupported else 'pass')
+              assert row['calls'] == len(row['events'])
+              assert row['wall_ms'] >= sum(e['wall_ms'] for e in row['events'])
+              for metric in metrics:
+                  assert row[metric] == sum(e[metric] for e in row['events'])
+              for event in row['events']:
+                  if row['repeat'] == 0:
+                      argv = json.dumps(event['argv'], ensure_ascii=False, separators=(',', ':')).encode()
+                      assert event['argv_bytes'] == len(argv)
+                      assert event['argv_sha256'] == hashlib.sha256(argv).hexdigest()
+                  else:
+                      assert 'argv' not in event
+              if unsupported:
+                  outcomes[row['arm']]['unsupported'] += 1
+                  continue
+              assert row['observed_exit'] == row['expected_exit']
+              assert all(row[k] for k in ('output_ok', 'guard_ok', 'source_ok', 'diagnostic_ok'))
+              assert row['unexpected_files'] == []
+              if task['expected_exit'] == 0:
+                  assert len(row['actual_sha256']) == task['copies']
+                  assert all(h == row['expected_sha256'] for h in row['actual_sha256'])
+                  outcomes[row['arm']]['completed'] += 1
+              else:
+                  outcomes[row['arm']]['correct_rejections'] += 1
+              groups[(row['task'], row['arm'])].append(row)
+          for arm, reported in summary['totals'].items():
+              armrows = [r for r in rows if r['arm'] == arm]
+              recalculated = {'passed': sum(r['pass'] is True for r in armrows),
+                              'trials': sum(r['supported'] for r in armrows),
+                              'unsupported': sum(not r['supported'] for r in armrows)}
+              assert recalculated == reported
+              totals[arm] = recalculated
+          for case in summary['cases']:
+              for arm, reported in case['arms'].items():
+                  group = groups[(case['task'], arm)]
+                  assert len(group) == repeats == reported['n']
+                  assert sum(r['pass'] for r in group) == reported['passed']
+                  times = sorted(r['wall_ms'] for r in group)
+                  assert statistics.median(times) == reported['median_ms']
+                  assert times[math.ceil(.95 * len(times)) - 1] == reported['p95_ms']
+                  assert statistics.median(r['calls'] for r in group) == reported['median_calls']
+                  boundary = [sum(r[k] for k in metrics) for r in group]
+                  assert statistics.median(boundary) == reported['median_boundary_bytes']
+          assert summary['agent_trials'] is None and summary['model_tokens'] is None and summary['model_cost'] is None
+          assert meta['source_sha'] in (root / 'install-command.txt').read_text()
+          assert meta['harness_sha256'] == hashlib.sha256(pathlib.Path('benchmarks/copypaste/bench.py').read_bytes()).hexdigest()
+          checks = json.loads((root / 'rust-validation.json').read_text())
+          assert checks == {'fmt_exit': 0, 'test_exit': 0, 'clippy_exit': 0}
+          result = {'audit': 'passed', 'scope': 'all recorded rows; arithmetic and recorded assertions; not a second execution',
+                    'audited_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+                    'source_sha': meta['source_sha'], 'raw_rows': len(rows), 'unique_tasks': len(tasks),
+                    'repeats': repeats, 'raw_bytes': len(raw), 'raw_sha256': hashlib.sha256(raw).hexdigest(),
+                    'totals': totals, 'outcomes': dict(outcomes), 'rust_validation': checks,
+                    'audit_run_url': os.environ['GITHUB_SERVER_URL'] + '/' + os.environ['GITHUB_REPOSITORY'] + '/actions/runs/' + os.environ['GITHUB_RUN_ID'],
+                    'limitations': ['Recorded output hashes and guards are checked; deleted temporary outputs cannot be independently re-read.',
+                                    'No live model evaluation or token/cost measurement.']}
+          (root / 'audit.json').write_text(json.dumps(result, indent=2) + '\n')
+          print(json.dumps(result, indent=2))
+          PY
+      - name: Save audit only to benchmark branch
+        if: ${{ github.ref == 'refs/heads/bench/copy-paste-v1' }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add benchmarks/copypaste/results/38625471864/audit.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'bench: record full raw-data and aggregate audit'
+            git push origin HEAD:refs/heads/bench/copy-paste-v1
+          fi

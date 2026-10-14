@@ -1,0 +1,1104 @@
+{
+  "metadata": {
+    "benchmark_version": "0.1.0",
+    "source_sha": "8d649a45e565387ee58150a13fc082864183aad1",
+    "cpyref_version": "cpyref 0.1.1",
+    "binary_sha256": "56a667ffc375a8417df8be555c28b6e2ec79e76275517127546eca29e0eea247",
+    "harness_sha256": "e88da9ead964929c4494b04668ec3c7b0fd956ec30f1ac9e4e27c96b7c36baa0",
+    "cargo_lock_sha256": "1b80bfe0c9054864751a186e684c0412f5f72c8e538d028828ec85cebd977094",
+    "utc": "2026-10-14T19:39:56.159412+00:00",
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+    "cpu_count": 4,
+    "seed": 20261014,
+    "repeats": 20,
+    "warmup": 1,
+    "unique_tasks": 35,
+    "run_url": "https://github.com/LIghtJUNction/cpyref/actions/runs/38625471864",
+    "install_command": "cargo install --git https://github.com/LIghtJUNction/cpyref --rev 8d649a45e565387ee58150a13fc082864183aad1 --locked --root /home/runner/work/_temp/cpyref-installed",
+    "agent_evaluation": "not_run",
+    "cache_policy": "warm; no cache eviction"
+  },
+  "totals": {
+    "cpyref": {
+      "passed": 700,
+      "trials": 700,
+      "unsupported": 0
+    },
+    "python_bytes": {
+      "passed": 700,
+      "trials": 700,
+      "unsupported": 0
+    },
+    "inline_base64": {
+      "passed": 640,
+      "trials": 640,
+      "unsupported": 60
+    },
+    "native_cp": {
+      "passed": 160,
+      "trials": 160,
+      "unsupported": 0
+    }
+  },
+  "cases": [
+    {
+      "task": "R01-license",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.9652735,
+          "p95_ms": 4.949694,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 99.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.042778,
+          "p95_ms": 29.699307,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 697.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.791523,
+          "p95_ms": 59.081634,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 3857.0
+        },
+        "native_cp": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 2.45071,
+          "p95_ms": 2.55504,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 29.0
+        }
+      }
+    },
+    {
+      "task": "R02-chinese-doc",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 4.015168,
+          "p95_ms": 4.342226,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 99.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.0543795,
+          "p95_ms": 31.418847,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 697.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.110457999999994,
+          "p95_ms": 59.355685,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 17649.0
+        },
+        "native_cp": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 2.4366865,
+          "p95_ms": 2.629019,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 29.0
+        }
+      }
+    },
+    {
+      "task": "R03-config-lines",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 4.030693,
+          "p95_ms": 4.288773,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 116.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.185033,
+          "p95_ms": 29.849686,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 753.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.984752,
+          "p95_ms": 59.655292,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 2961.0
+        }
+      }
+    },
+    {
+      "task": "R04-rust-lines",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.9769405,
+          "p95_ms": 4.262612,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 116.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.228237,
+          "p95_ms": 30.152852,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 753.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.1105975,
+          "p95_ms": 61.158305,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 2649.0
+        }
+      }
+    },
+    {
+      "task": "R05-readme-section",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 4.0103765,
+          "p95_ms": 4.276733,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 163.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.184763500000003,
+          "p95_ms": 29.859095,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 1010.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.3224485,
+          "p95_ms": 59.415958,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 4394.0
+        }
+      }
+    },
+    {
+      "task": "R06-readme-fanout10",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 19.5896675,
+          "p95_ms": 20.65016,
+          "median_calls": 11.0,
+          "median_boundary_bytes": 603.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 33.461042,
+          "p95_ms": 34.669275,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 698.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 62.16143,
+          "p95_ms": 64.578479,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 23282.0
+        },
+        "native_cp": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 23.139094,
+          "p95_ms": 23.599257,
+          "median_calls": 10.0,
+          "median_boundary_bytes": 290.0
+        }
+      }
+    },
+    {
+      "task": "S01-long-url",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 4.399884999999999,
+          "p95_ms": 4.683561,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 152.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.218305,
+          "p95_ms": 29.935129,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 859.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.887139000000005,
+          "p95_ms": 59.980454,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 12195.0
+        }
+      }
+    },
+    {
+      "task": "S02-shell-characters",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.9383305,
+          "p95_ms": 4.364252,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 99.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.188145499999997,
+          "p95_ms": 30.680196,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 697.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.913017499999995,
+          "p95_ms": 60.111592,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1065.0
+        },
+        "native_cp": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 2.4631464999999997,
+          "p95_ms": 2.608908,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 29.0
+        }
+      }
+    },
+    {
+      "task": "S03-unicode-whitespace",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 4.018288,
+          "p95_ms": 4.173597,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 99.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.159022,
+          "p95_ms": 30.581758,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 697.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.0137335,
+          "p95_ms": 61.341728,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 8473.0
+        },
+        "native_cp": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 2.452687,
+          "p95_ms": 2.575038,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 29.0
+        }
+      }
+    },
+    {
+      "task": "S04-crlf-lines",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.991099,
+          "p95_ms": 4.903232,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 115.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 28.977600000000002,
+          "p95_ms": 30.332292,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 752.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.8990575,
+          "p95_ms": 60.376545,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1104.0
+        }
+      }
+    },
+    {
+      "task": "S05-binary-256k",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 5.7608345,
+          "p95_ms": 7.611055,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 99.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.4925815,
+          "p95_ms": 30.814392,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 697.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 60.427648000000005,
+          "p95_ms": 62.841058,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 700057.0
+        },
+        "native_cp": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 2.55053,
+          "p95_ms": 2.654185,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 29.0
+        }
+      }
+    },
+    {
+      "task": "S06-no-final-newline",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.9219065,
+          "p95_ms": 4.245081,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 113.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.023643999999997,
+          "p95_ms": 29.742176,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 752.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.210259,
+          "p95_ms": 59.764829,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1072.0
+        }
+      }
+    },
+    {
+      "task": "S07-context-disambiguation",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.9465505,
+          "p95_ms": 4.192666,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 185.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.199870500000003,
+          "p95_ms": 30.259521,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 968.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.387105500000004,
+          "p95_ms": 59.181849,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1304.0
+        }
+      }
+    },
+    {
+      "task": "S08-multiline-markers",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.982258,
+          "p95_ms": 4.152035,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 149.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.2211125,
+          "p95_ms": 30.287939,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 919.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.1425415,
+          "p95_ms": 59.57111,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1255.0
+        }
+      }
+    },
+    {
+      "task": "S09-overlap-ambiguity",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 1.601702,
+          "p95_ms": 1.655282,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 448.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 28.3690375,
+          "p95_ms": 28.994839,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 844.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 28.1891375,
+          "p95_ms": 28.890556,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 451.0
+        }
+      }
+    },
+    {
+      "task": "S10-no-match",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 1.549531,
+          "p95_ms": 1.631016,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 169.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 28.4193735,
+          "p95_ms": 29.285275,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 848.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 28.107295999999998,
+          "p95_ms": 29.329991,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 455.0
+        }
+      }
+    },
+    {
+      "task": "S11-invalid-regex",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 1.555635,
+          "p95_ms": 1.623167,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 180.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 28.3903775,
+          "p95_ms": 29.750669,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 845.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 28.312656500000003,
+          "p95_ms": 30.068658,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 452.0
+        }
+      }
+    },
+    {
+      "task": "S12-empty-input",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 1.513647,
+          "p95_ms": 1.644246,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 133.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 28.1866505,
+          "p95_ms": 28.708304,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 710.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 27.99378,
+          "p95_ms": 28.556555,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 317.0
+        }
+      }
+    },
+    {
+      "task": "S13-protect-existing",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.7349185,
+          "p95_ms": 4.093951,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 220.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 28.38974,
+          "p95_ms": 28.891652,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 710.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.00778,
+          "p95_ms": 58.30459,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1038.0
+        }
+      }
+    },
+    {
+      "task": "S14-authorized-replace",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.9340444999999997,
+          "p95_ms": 4.583388,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 109.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.0673685,
+          "p95_ms": 29.486674,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 696.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.5188945,
+          "p95_ms": 58.986747,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1040.0
+        }
+      }
+    },
+    {
+      "task": "S15-protect-symlink",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.6823430000000004,
+          "p95_ms": 4.078454,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 232.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 28.214700999999998,
+          "p95_ms": 29.125084,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 710.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 56.9780845,
+          "p95_ms": 59.566763,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1038.0
+        }
+      }
+    },
+    {
+      "task": "S16-source-deleted",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 4.00556,
+          "p95_ms": 4.225721,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 99.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.217202,
+          "p95_ms": 59.944524,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1543.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.7373395,
+          "p95_ms": 58.373317,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1065.0
+        }
+      }
+    },
+    {
+      "task": "S17-source-modified",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 4.0894315,
+          "p95_ms": 4.373192,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 99.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.7424775,
+          "p95_ms": 61.127067,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1543.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.969134499999996,
+          "p95_ms": 59.573103,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1065.0
+        }
+      }
+    },
+    {
+      "task": "S18-same-project-child",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.9960265,
+          "p95_ms": 4.391165,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 99.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.6414135,
+          "p95_ms": 59.554344,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1543.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.006741,
+          "p95_ms": 59.150831,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1065.0
+        }
+      }
+    },
+    {
+      "task": "S19-other-project",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.6135955,
+          "p95_ms": 3.781574,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 820.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.692374,
+          "p95_ms": 61.392505,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1584.0
+        }
+      }
+    },
+    {
+      "task": "S20-other-namespace",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.6402840000000003,
+          "p95_ms": 3.963024,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 838.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.7709775,
+          "p95_ms": 59.203617,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1584.0
+        }
+      }
+    },
+    {
+      "task": "S21-shared-projects",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.9032295,
+          "p95_ms": 4.118677,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 179.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.377408,
+          "p95_ms": 59.785462,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1543.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.692826499999995,
+          "p95_ms": 60.29593,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1065.0
+        }
+      }
+    },
+    {
+      "task": "S22-corrupt-snapshot",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 4.072521500000001,
+          "p95_ms": 4.407596,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 238.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.277604499999995,
+          "p95_ms": 60.586115,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1556.0
+        }
+      }
+    },
+    {
+      "task": "S23-insert-before-anchor",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 33.086729500000004,
+          "p95_ms": 34.091946,
+          "median_calls": 3.0,
+          "median_boundary_bytes": 826.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.110952500000003,
+          "p95_ms": 30.493419,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 769.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.125864,
+          "p95_ms": 59.180089,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1105.0
+        }
+      }
+    },
+    {
+      "task": "S24-replace-region",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 33.338984999999994,
+          "p95_ms": 34.959429,
+          "median_calls": 3.0,
+          "median_boundary_bytes": 904.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.212905499999998,
+          "p95_ms": 29.983699,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 847.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.163052,
+          "p95_ms": 59.904203,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1183.0
+        }
+      }
+    },
+    {
+      "task": "S25-append",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 32.726721999999995,
+          "p95_ms": 34.022205,
+          "median_calls": 3.0,
+          "median_boundary_bytes": 762.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 28.959053500000003,
+          "p95_ms": 30.514153,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 705.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.843714500000004,
+          "p95_ms": 59.457856,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1033.0
+        }
+      }
+    },
+    {
+      "task": "S26-ambiguous-destination",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 32.5492695,
+          "p95_ms": 33.184498,
+          "median_calls": 3.0,
+          "median_boundary_bytes": 839.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 28.365467000000002,
+          "p95_ms": 29.208237,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 782.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.2808245,
+          "p95_ms": 58.317579,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1094.0
+        }
+      }
+    },
+    {
+      "task": "S27-whole-1m",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 11.059221,
+          "p95_ms": 11.609207,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 99.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 30.345152,
+          "p95_ms": 31.222782,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 697.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 67.914542,
+          "p95_ms": 69.380927,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 2797209.0
+        },
+        "native_cp": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 2.8164285,
+          "p95_ms": 2.876712,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 29.0
+        }
+      }
+    },
+    {
+      "task": "S28-whole-64b",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.9806679999999997,
+          "p95_ms": 5.178913,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 99.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.0153095,
+          "p95_ms": 30.568588,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 697.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 57.7182855,
+          "p95_ms": 59.794616,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 1177.0
+        },
+        "native_cp": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 2.4245965,
+          "p95_ms": 2.610291,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 29.0
+        }
+      }
+    },
+    {
+      "task": "S29-stdin",
+      "arms": {
+        "cpyref": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 3.9356299999999997,
+          "p95_ms": 4.341692,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 2691.0
+        },
+        "python_bytes": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 29.190314,
+          "p95_ms": 30.024725,
+          "median_calls": 1.0,
+          "median_boundary_bytes": 3293.0
+        },
+        "inline_base64": {
+          "n": 20,
+          "passed": 20,
+          "median_ms": 58.126007,
+          "p95_ms": 59.279243,
+          "median_calls": 2.0,
+          "median_boundary_bytes": 10533.0
+        }
+      }
+    }
+  ],
+  "agent_trials": null,
+  "model_tokens": null,
+  "model_cost": null
+}
