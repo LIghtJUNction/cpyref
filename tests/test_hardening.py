@@ -198,5 +198,25 @@ class HardeningTests(unittest.TestCase):
         self.assertFalse((self.root / "started").exists())
 
 
+    def test_redaction_expansion_is_limited_before_disk_write(self):
+        self.env["DEMO_SECRET"] = "x"
+        result = self.call("run", "--max-log-bytes", 16, "--redact-env", "DEMO_SECRET", "--", sys.executable,
+                           "-c", "import sys; sys.stdout.write('x'*8)")
+        self.assertEqual(result.returncode, 125, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["termination_reason"], "log_limit")
+        self.assertFalse(report["logs_complete"])
+        self.assertLessEqual(report["stdout_bytes"] + report["stderr_bytes"], 16)
+
+    def test_fast_finished_child_cannot_hide_limit(self):
+        for _ in range(10):
+            result = self.call("run", "--max-log-bytes", 64, "--", sys.executable,
+                               "-c", "import os; os.write(1,b'z'*65)")
+            self.assertEqual(result.returncode, 125, result.stderr)
+            report = json.loads(result.stdout)
+            self.assertEqual(report["termination_reason"], "log_limit")
+            self.assertFalse(report["logs_complete"])
+
+
 if __name__ == "__main__":
     unittest.main()

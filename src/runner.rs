@@ -146,12 +146,14 @@ impl CaptureState {
     }
 }
 fn reserve(counter: &AtomicU64, cap: u64, requested: usize) -> usize {
-    let previous = counter
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |used| {
-            Some(used.saturating_add(requested as u64).min(cap))
-        })
-        .expect("infallible byte reservation");
-    (cap - previous).min(requested as u64) as usize
+    let mut used = counter.load(Ordering::SeqCst);
+    loop {
+        let allowed = cap.saturating_sub(used).min(requested as u64);
+        match counter.compare_exchange(used, used + allowed, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => return allowed as usize,
+            Err(current) => used = current,
+        }
+    }
 }
 
 fn capture(
@@ -613,7 +615,13 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
             && out_thread.is_finished()
             && err_thread.is_finished()
         {
-            break;
+            // A capture thread may have set the guard after the earlier load but before
+            // is_finished. Re-read only after both completions, before declaring EOF complete.
+            match state.reason.load(Ordering::SeqCst) {
+                0 => break,
+                1 => termination_reason = Some("log_limit".into()),
+                _ => termination_reason = Some("capture_failed".into()),
+            }
         }
         if termination_reason.is_none()
             && timer.elapsed() >= Duration::from_secs(options.limits.timeout_seconds)
