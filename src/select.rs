@@ -16,6 +16,8 @@ pub struct Spec {
     pub to: Option<String>,
     pub markers_regex: bool,
     pub exclude_markers: bool,
+    pub exclude_start: bool,
+    pub exclude_end: bool,
     pub group: Option<String>,
     pub within: Option<String>,
     pub before: Option<String>,
@@ -171,7 +173,9 @@ fn marker_matches(text: &str, spec: &Spec) -> Result<Vec<Range<usize>>> {
         // Defined semantics: each start pairs with its nearest non-overlapping following end.
         let end_index = ends.partition_point(|end| end.start < start.end);
         if let Some(end) = ends.get(end_index) {
-            let range = if spec.exclude_markers { start.end..end.start } else { start.start..end.end };
+            let left = if spec.exclude_markers || spec.exclude_start { start.end } else { start.start };
+            let right = if spec.exclude_markers || spec.exclude_end { end.start } else { end.end };
+            let range = left..right;
             push_match(&mut ranges, range)?;
         }
     }
@@ -190,8 +194,11 @@ fn validate(spec: &Spec) -> Result<()> {
     if spec.from.is_some() != spec.to.is_some() {
         return Err(Error::invalid("--from and --to must be used together."));
     }
-    if (spec.markers_regex || spec.exclude_markers) && spec.from.is_none() {
+    if (spec.markers_regex || spec.exclude_markers || spec.exclude_start || spec.exclude_end) && spec.from.is_none() {
         return Err(Error::invalid("Marker options require --from and --to."));
+    }
+    if spec.exclude_markers && (spec.exclude_start || spec.exclude_end) {
+        return Err(Error::invalid("--exclude-markers cannot be combined with independent boundary options."));
     }
     if spec.group.is_some() && spec.regex.is_none() {
         return Err(Error::invalid("--group requires --regex."));
@@ -212,7 +219,7 @@ fn validate(spec: &Spec) -> Result<()> {
 }
 
 /// Select one original byte range. Nothing is written when this function fails.
-pub fn select(data: &[u8], spec: &Spec) -> Result<Span> {
+pub fn preview(data: &[u8], spec: &Spec) -> Result<Preview> {
     validate(spec)?;
     let starts = line_starts(data);
     let scope = match &spec.within {
@@ -251,6 +258,8 @@ pub fn select(data: &[u8], spec: &Spec) -> Result<Span> {
     if ranges.is_empty() {
         return Err(Error::new("NO_MATCH", 2, "No content satisfies the selector and context filters."));
     }
+    let match_count = ranges.len();
+    let candidates = ranges.iter().take(MAX_CANDIDATES).cloned().map(|r| describe(r, &starts, kind)).collect();
     let selected = if let Some(occurrence) = spec.occurrence {
         ranges.get(occurrence - 1).cloned().ok_or_else(|| {
             Error::new("NO_MATCH", 2, "The requested occurrence does not exist.")
@@ -260,7 +269,7 @@ pub fn select(data: &[u8], spec: &Spec) -> Result<Span> {
         ranges.remove(0)
     } else {
         let candidates: Vec<_> = ranges.iter().take(MAX_CANDIDATES).enumerate().map(|(i, r)| {
-            json!({"occurrence": i + 1, "span": describe(r.clone(), &starts, kind)})
+            json!({"occurrence": i + 1, "bytes": r.end - r.start, "span": describe(r.clone(), &starts, kind)})
         }).collect();
         return Err(Error::new("AMBIGUOUS", 3, "Multiple matches found; narrow the selector or specify --occurrence.")
             .details(json!({"match_count": ranges.len(), "candidates": candidates, "truncated": ranges.len() > MAX_CANDIDATES})));
@@ -268,5 +277,17 @@ pub fn select(data: &[u8], spec: &Spec) -> Result<Span> {
     if selected.is_empty() {
         return Err(Error::new("EMPTY_SELECTION", 8, "The selected content is empty."));
     }
-    Ok(describe(selected, &starts, kind))
+    Ok(Preview { match_count, candidates, truncated: match_count > MAX_CANDIDATES, selected: describe(selected, &starts, kind) })
+}
+
+#[derive(Debug, Serialize)]
+pub struct Preview {
+    pub match_count: usize,
+    pub candidates: Vec<Span>,
+    pub truncated: bool,
+    pub selected: Span,
+}
+
+pub fn select(data: &[u8], spec: &Spec) -> Result<Span> {
+    preview(data, spec).map(|p| p.selected)
 }

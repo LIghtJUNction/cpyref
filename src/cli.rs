@@ -32,6 +32,50 @@ pub enum Command {
     Remove { id: String },
     /// Show the selected project, namespace, store, and config files; never creates a store.
     Context,
+    /// List metadata in this space, newest first; never expand payloads.
+    List {
+        #[command(flatten)]
+        filter: FilterArgs,
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=1000))]
+        limit: u32,
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show counts, sizes and age buckets for this space without reading payloads.
+    Stats,
+    /// Preview a batch deletion. Apply only with the exact preview confirmation token.
+    Clean {
+        /// Complete reference IDs; cannot be combined with filters or --all.
+        ids: Vec<String>,
+        #[command(flatten)]
+        filter: FilterArgs,
+        /// Select all entries (required if no IDs or filters are given).
+        #[arg(long)]
+        all: bool,
+        /// Select entries older than this many days (86400 seconds each).
+        #[arg(long)]
+        older_than: Option<u32>,
+        /// Protect this many newest entries in the entire selected space.
+        #[arg(long)]
+        keep_latest: Option<usize>,
+        #[arg(long, requires = "confirm")]
+        apply: bool,
+        /// Token returned by the preview; refused if the selected set changes.
+        #[arg(long, requires = "apply")]
+        confirm: Option<String>,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct FilterArgs {
+    /// Case-sensitive substring of the recorded source path.
+    #[arg(long)]
+    pub source: Option<String>,
+    /// Case-sensitive substring of the saved note.
+    #[arg(long)]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -58,6 +102,23 @@ pub struct CopyArgs {
     /// Copy only content between the markers, without the markers themselves.
     #[arg(long, requires = "from")]
     pub exclude_markers: bool,
+    /// Exclude only the start marker (both markers are included by default).
+    #[arg(long, requires = "from", conflicts_with = "exclude_markers")]
+    pub exclude_start: bool,
+    /// Exclude only the end marker, keeping the current function declaration.
+    #[arg(long, requires = "from", conflicts_with = "exclude_markers")]
+    pub exclude_end: bool,
+    /// Optional metadata note; never changes the saved bytes.
+    #[arg(long)]
+    pub note: Option<String>,
+    /// Report locations and byte counts without saving or creating a store.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Include an escaped content preview, bounded by --preview-bytes.
+    #[arg(long, requires = "dry_run")]
+    pub show_content: bool,
+    #[arg(long, requires = "show_content", default_value_t = 256, value_parser = clap::value_parser!(u32).range(1..=4096))]
+    pub preview_bytes: u32,
     /// Copy a numbered or named regex capture group, not the complete match.
     #[arg(long, requires = "regex")]
     pub group: Option<String>,
@@ -103,6 +164,8 @@ impl CopyArgs {
             to: self.to.clone(),
             markers_regex: self.markers_regex,
             exclude_markers: self.exclude_markers,
+            exclude_start: self.exclude_start,
+            exclude_end: self.exclude_end,
             group: self.group.clone(),
             within: self.within.clone(),
             before: self.before.clone(),

@@ -21,7 +21,7 @@ without a marker, the current directory itself is the root. Subprojects and Git 
 If agents change directories, keep the same absolute `--project /absolute/project` on every call.
 This fixes the space only: relative input/output paths still resolve from the current directory.
 
-Keep scope, project root, namespace and storage base consistent for `copy`, `paste`, `info` and `remove`.
+Keep scope, project root, namespace and storage base consistent for `copy`, `paste`, `info`, `list`, `stats`, `clean` and `remove`.
 For a handoff, send the complete ID **and** the `context` returned by `copy --json`.
 The receiving agent must use the same space and have access to the same local store.
 `--store` selects a base directory; it does not remove project isolation.
@@ -76,6 +76,29 @@ if the user already authorized replacing that file, apply it without asking agai
 Snapshots are independent of later source edits. Use `remove ID` in the same space when the task's
 retention requirements authorize deletion; there is no automatic expiry.
 
+## Find references, preview and retain
+
+Use `copy --note 'purpose'` for a short retrieval note (at most 4096 UTF-8 bytes).
+Use `list --limit 20 --source 'src/' --note 'purpose'` to find metadata in the agreed space;
+`--json` provides structured output and `--offset` paginates. Do not switch spaces to search.
+
+Preview boundaries with `copy ... --dry-run`: it reports positions and sizes without saving.
+Default marker selection includes both ends. `--exclude-end` keeps the start declaration but excludes
+the next marker; `--exclude-start` independently excludes the start. `--exclude-markers` excludes both.
+Ambiguous previews still fail; never automatically choose occurrence 1. Only request `--show-content`
+when needed and bound it with `--preview-bytes` (default 256, maximum 4096); the JSON preview is lossy
+UTF-8 display, not an exact-byte export.
+
+`stats` reports only the current space's metadata, payload size, record size and age buckets.
+`max_entries` in TOML or `--max-entries` / `CPYREF_MAX_ENTRIES` limits references per space;
+0 is unlimited. Reaching the limit rejects the new copy without evicting old records.
+
+When deletion is authorized, run `clean` with complete IDs, source/note/age filters, `--keep-latest N`,
+or explicit `--all`. It previews the exact record set. Inspect it, then repeat the same arguments with
+`--apply --confirm TOKEN` from that preview. A changed set fails with `PLAN_CHANGED`; preview again.
+Do not automatically discard old references to satisfy a limit: they may still be in task handoffs.
+Optional TOML `[cleanup]` defaults `older_than_days` and `keep_latest` apply only when clean is invoked; explicit IDs or `--all` bypass those defaults. No scheduled cleanup occurs. A batch filesystem error may report partial deletions in `removed`.
+
 ## Resolve failures deliberately
 
 - `AMBIGUOUS`: inspect candidate positions, then narrow `--within`, add `--before`/`--after`, or improve the selector.
@@ -86,6 +109,8 @@ retention requirements authorize deletion; there is no automatic expiry.
 - `CONFIG_ERROR` / `PROJECT_ERROR`: fix the reported context. Do not silently bypass configuration or fall back globally.
 - `CORRUPT_REF`: stop restoration and recover from a trusted original before copying again.
 - `OUTPUT_EXISTS`: apply existing replacement authorization or choose an authorized new output path.
+- `ENTRY_LIMIT`: show current space and `stats`; use existing retention authorization to preview cleanup or adjust the limit. Never silently switch spaces or auto-delete.
+- `PLAN_CHANGED`: inspect a fresh cleanup preview before attempting to apply it.
 - Other errors: handle the reported cause; do not ignore nonzero status or retry unchanged invalid selectors.
 
 ## Boundaries and further options

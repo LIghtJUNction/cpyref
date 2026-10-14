@@ -78,12 +78,12 @@ cpyref copy config.txt --text 'timeout = 30' --occurrence 2
 | 0 | 无 | 成功，包括帮助、版本和 context 查询 |
 | 2 | `NO_MATCH` | 无法定位、行不存在、指定次数不存在、缺少起止边界 |
 | 3 | `AMBIGUOUS` | 多个匹配，不能唯一定位 |
-| 4 | `INVALID_ARGUMENT`、`INVALID_REGEX`、`INVALID_GROUP`、`INVALID_UTF8`、`INVALID_REF`、`UNSUPPORTED_SOURCE`、`CONFIG_ERROR`、`PROJECT_ERROR` | 参数、匹配、编码、编号、输入类型、配置或项目路径错误 |
+| 4 | `INVALID_ARGUMENT`、`INVALID_REGEX`、`INVALID_GROUP`、`INVALID_UTF8`、`INVALID_REF`、`UNSUPPORTED_SOURCE`、`CONFIG_ERROR`、`PROJECT_ERROR`、`PLAN_CHANGED` | 参数、匹配、编码、编号、输入类型、配置或项目路径错误 |
 | 5 | `FILE_NOT_FOUND`、`PERMISSION_DENIED`、`OUTPUT_EXISTS`、`UNSAFE_STORE`、`UNSAFE_OUTPUT`、`IO_ERROR` 等 | 文件或存储操作失败 |
 | 6 | `REF_NOT_FOUND` | 当前空间没有该编号；details.context 说明本次选择的空间 |
 | 7 | `CORRUPT_REF` | 快照格式、长度或正文摘要不符 |
 | 8 | `EMPTY_SELECTION` | 输入或所选内容为空 |
-| 9 | `SIZE_LIMIT`、`MATCH_LIMIT` | 超过输入、元数据或匹配数量限制 |
+| 9 | `SIZE_LIMIT`、`MATCH_LIMIT`、`ENTRY_LIMIT` | 超过输入、元数据或匹配数量限制 |
 
 歧义错误最多返回 20 个候选的位置，不返回候选正文；`match_count` 为实际候选数，`truncated` 表示位置列表是否截断。达到匹配上限时直接报 `MATCH_LIMIT`，不把截断后的结果当成唯一结果。
 
@@ -95,14 +95,65 @@ cpyref copy config.txt --text 'timeout = 30' --occurrence 2
 
 选区保存为独立的原始字节快照，不是指向原文件的动态指针。复制成功后，即使原文件被修改或删除，粘贴仍读取保存的内容。整个文件复制和行号复制不要求 UTF-8；文本匹配要求所搜索范围内的内容为 UTF-8。空格、缩进、CRLF、NUL 和非 ASCII 字符不会被重新生成或规范化。
 
-每份快照使用单个文件保存元数据和正文。先写临时文件并同步文件内容，再以不覆盖已有编号的方式发布。编号冲突时重新生成，最多重试 32 次。正常多进程使用不需要模型协调锁。粘贴在输出任何内容前检查完整正文的长度和 SHA-256。`info` 只读元数据，不验证正文摘要。这些检查不是来源认证，不防止有写权限的进程同时修改正文与元数据。
+每份快照使用单个文件保存元数据和正文。先写临时文件并同步文件内容，再以不覆盖已有编号的方式发布。编号冲突时重新生成，最多重试 32 次。正常多进程使用由工具自身的每空间写锁协调，不需要模型手工协调。粘贴在输出任何内容前检查完整正文的长度和 SHA-256。`info` 只读元数据，不验证正文摘要。这些检查不是来源认证，不防止有写权限的进程同时修改正文与元数据。
 
 默认输入上限为 16 MiB，可通过 `--max-bytes` 调整，硬上限为 128 MiB。即使只复制其中一行，输入限制仍按整个读取的输入计算。匹配扫描最多接受 10,000 个结果；正则编译大小上限为 4 MiB。输入在内存中处理，不是无限文件的流式选择器，也不承诺整个进程内存仅等于输入大小。
 
 Unix 下新建存储目录权限为 `0700`，快照为 `0600`；会检查基目录到实际空间的传统权限位并拒绝受管路径中的符号链接。Windows 使用用户目录及继承权限，并拒绝受管目录中的重解析点。这里不验证所有扩展 ACL，不阻止同账号程序主动访问其他空间或并发篡改路径，不改变已有目录权限。
 
-数据未加密，短编号不是授权令牌。敏感任务应使用独立账号或受控存储，并通过 `remove` 删除不再需要的快照。目前没有自动过期、总磁盘配额或自动清理。快照发布中断可能留下临时文件；这里不承诺突然断电后的目录项持久性。
+数据未加密，短编号不是授权令牌。敏感任务应使用独立账号或受控存储，并通过 `remove` 删除不再需要的快照。没有自动过期、总磁盘配额或自动清理；可配置保存条数上限，并显式预览/执行批量清理。快照发布中断可能留下临时文件；这里不承诺突然断电后的目录项持久性。
 
 复制期间应避免其他程序同时改写输入文件。当前版本保存读取到的字节，不对外部写入者加锁，也不声称获得文件系统级的一致性快照。
 
 粘贴到文件默认禁止覆盖；`--force` 使用新文件替换已有普通文件，不保留原文件的权限、扩展属性或其他元数据。符号链接输出被拒绝。输出到 stdout 发生写入错误时，接收方可能已经收到了部分内容；复制编号输出失败时，已保存的快照也可能仍然存在。
+
+## 备注、查找与复制预览
+
+```sh
+cpyref copy src/example.py --from 'def example' --to 'def next' \
+  --exclude-end --note '修改前的函数'
+cpyref list --limit 20
+cpyref list --source 'src/' --note '修改前' --limit 20 --offset 20
+cpyref list --json
+
+# 只报告匹配数、位置和字节数；不写快照，也不创建存储目录
+cpyref copy src/example.py --from 'def example' --to 'def next' --exclude-end --dry-run
+# 显式查看少量内容；JSON 转义输出，不把控制字符直接送到终端
+cpyref copy src/example.py --lines 10:20 --dry-run --show-content --preview-bytes 256
+```
+
+两端默认都包含；`--exclude-start` 和 `--exclude-end` 可单独使用，也可一起使用。
+`--exclude-markers` 仍表示同时排除两端，不能与独立边界选项混用。这些选项只改变标记本身是否被包含，不额外删除换行或缩进。
+
+`--dry-run` 成功返回 JSON：`match_count`、最多 20 个 `candidates`、`truncated`、实际 `selected` 和 `bytes`。
+未指定 occurrence 且存在多个匹配时，仍返回退出码 3 的 `AMBIGUOUS`，在 stderr 提供最多 20 个位置及对应字节数，绝不默认选择第一处。
+预览正文必须显式使用 `--show-content`；默认最多 256 个输入字节，`--preview-bytes` 范围 1–4096。正文显示使用 UTF-8 有损解码并进行 JSON 转义，可能截断多字节字符；此显示不是字节导出，精确取回请用 `paste`。`content_bytes` 是截取的输入字节数，`content_truncated` 表示是否截断。
+
+备注最多 4096 个 UTF-8 字节，作为可选元数据保存，旧快照无需迁移。默认 copy 输出仍只有短编号。
+`list` 默认输出元数据表，包含编号、来源、行范围、半开字节范围、字节数、Unix 秒时间和备注；来源与备注使用 JSON 字符串转义。默认最多 20 条，`--limit` 范围 1–1000，`--offset` 从 0 开始。按创建时间从新到旧排列，同秒按 ID 升序。`--source` 与 `--note` 是区分大小写的子串匹配，同时使用时取交集。
+`--json` 返回 `references`、筛选后的 `total`、`offset`、`limit` 和 `context`。不读取正文；损坏的元数据会报错，不会悄悄漏掉引用。
+
+## 统计与清理
+
+```sh
+cpyref stats
+cpyref clean c0123456789ab c123456789abc
+cpyref clean --note '临时'
+cpyref clean --source 'build/' --older-than 30 --keep-latest 20
+cpyref clean --all
+# 检查预览后，重复相同选择条件，并填入预览的 confirm 值
+cpyref clean --note '临时' --apply --confirm PREVIEW_TOKEN
+```
+
+这些命令始终只操作当前选定空间：默认是当前项目和 namespace，显式选择 shared/global 时才访问相应空间，不递归清理其他项目。
+
+`stats` 返回引用数 `count`、正文总字节数 `payload_bytes`、快照文件总逻辑字节数 `stored_bytes`（含头部，不含锁文件、临时文件和文件系统块开销）、最大快照元数据 `largest`、最早/最新创建时间及年龄分布。分桶为不足 1 天、1 到不足 7 天、7 到不足 30 天、30 天及以上。空库的时间及 largest 为 null。只读元数据，不校验正文摘要，整个统计不保证在其他进程并发修改时为原子快照。
+
+`clean` 默认只预览。必须给出完整编号、筛选条件、`--keep-latest` 或显式 `--all`，如果配置了 `[cleanup]` 默认规则，也可直接运行 `clean` 预览，否则空命令拒绝执行。编号不能与过滤条件或 `--all` 混用。空 source/note 筛选值被拒绝，不能借它们隐式全选。
+`--older-than N` 选择创建时间早于 N 天的引用，每天固定 86400 秒；时间相等不选。`--keep-latest N` 保护整个当前空间中最新的 N 条，再与其他条件取交集；同秒按 ID 排序，不承诺真实创建先后。
+配置表 `[cleanup]` 可设置默认 `older_than_days` 与 `keep_latest`；主动调用 clean 时使用，命令行覆盖对应字段。显式编号或 `--all` 不继承配置默认规则。没有任何定时、隐式年龄清理或达到上限后的自动淘汰。
+
+预览返回完整候选元数据、数量、正文总字节数及 `confirm`。执行需同时传 `--apply --confirm TOKEN`，确认码绑定空间路径和候选元数据；集合变化返回 `PLAN_CHANGED`（退出码 4），要求重新预览。确认码是防止误删的检查值，不是授权凭证。相同账号的其他程序仍可能主动修改存储。
+执行时先在写锁内重新检查全部候选元数据，再逐条删除；文件系统错误可能导致部分成功，错误详情会列出 `removed` 与 `failed`。不删除预览后新增的引用，不清理未知文件或遗留临时文件。元数据损坏时批量清理拒绝继续，可核对后用 `remove REF` 精确删除该记录。
+
+保存条数通过 `max_entries`、`CPYREF_MAX_ENTRIES` 或 `--max-entries` 配置，见[配置规范](project-spaces.md#保存上限与配置规范)。超过上限返回 `ENTRY_LIMIT`（退出码 9）；不会自动删除任何引用。正常写入和删除使用每空间 `.write.lock` 文件协调，进程退出会释放操作系统锁；不要手工删锁文件。使用旧版本或直接操作存储的程序不受新版本条数上限约束。

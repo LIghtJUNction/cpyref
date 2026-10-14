@@ -1,8 +1,9 @@
 use crate::{error::{Error, Result}, select::Span, MAX_BYTES};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::{fs::{self, File}, io::{Read, Write}, path::{Component, Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
+use std::{fs::{self, File, OpenOptions}, io::{Read, Write}, path::{Component, Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
 use tempfile::NamedTempFile;
 
 const MAGIC: &[u8; 8] = b"CPYREF\x01\n";
@@ -17,6 +18,8 @@ pub struct Metadata {
     pub created_at: u64,
     pub source: String,
     pub span: Span,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -135,13 +138,50 @@ impl Store {
 
     /// Publish one complete record without replacing another reference, even across processes.
     pub fn put(&self, data: &[u8], source: String, span: Span) -> Result<Metadata> {
+        self.put_with_options(data, source, span, None, 0)
+    }
+
+    /// All cooperating writers serialize count checks and publication in this space.
+    fn lock(&self) -> Result<File> {
+        self.check_root(false)?;
+        let path = self.root.join(".write.lock");
+        match fs::symlink_metadata(&path) {
+            Ok(meta) if !meta.is_file() || meta.file_type().is_symlink() => return Err(unsafe_store()),
+            Ok(_) => {},
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => return Err(Error::io("Inspect store lock", e)),
+        }
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = options.open(path).map_err(|e| Error::io("Open store lock", e))?;
+        file.lock().map_err(|e| Error::io("Lock store", e))?;
+        Ok(file)
+    }
+
+    pub fn put_with_options(&self, data: &[u8], source: String, span: Span, note: Option<String>, max_entries: usize) -> Result<Metadata> {
         if data.is_empty() {
             return Err(Error::new("EMPTY_SELECTION", 8, "The selected content is empty."));
         }
         if data.len() > MAX_BYTES || span.byte_end.checked_sub(span.byte_start) != Some(data.len()) {
             return Err(Error::invalid("Snapshot length and selected byte range do not agree, or exceed the hard size limit."));
         }
+        if note.as_ref().is_some_and(|n| n.len() > 4096) {
+            return Err(Error::invalid("Notes may contain at most 4096 UTF-8 bytes."));
+        }
         self.prepare()?;
+        let _lock = self.lock()?;
+        if max_entries != 0 {
+            let count = self.ids()?.len();
+            if count >= max_entries {
+                return Err(Error::new("ENTRY_LIMIT", 9, "This space has reached max_entries; preview cleanup or raise the configured limit.")
+                    .details(json!({"count": count, "max_entries": max_entries})));
+            }
+        }
         let mut metadata = Metadata {
             version: 1,
             id: String::new(),
@@ -151,6 +191,7 @@ impl Store {
                 .map_err(|_| Error::new("CLOCK_ERROR", 5, "The system clock is before the Unix epoch."))?.as_secs(),
             source,
             span,
+            note,
         };
         for _ in 0..32 {
             let mut random = [0_u8; 6];
@@ -232,7 +273,63 @@ impl Store {
         Ok((metadata, data))
     }
 
+    fn ids(&self) -> Result<Vec<String>> {
+        self.check_root(true)?;
+        let entries = match fs::read_dir(&self.root) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(Error::io("List space", e)),
+        };
+        let mut ids = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|e| Error::io("List space entry", e))?;
+            let name = entry.file_name();
+            if let Some(id) = name.to_str().and_then(|n| n.strip_suffix(".ref")) {
+                if valid_id(id) { ids.push(id.to_owned()); }
+            }
+        }
+        Ok(ids)
+    }
+
+    /// Metadata only, sorted newest first with an ID tie breaker. Missing space is empty.
+    /// Corrupt records fail closed rather than silently disappearing from inventory.
+    pub fn list(&self) -> Result<Vec<Metadata>> {
+        let mut entries = self.ids()?.iter().map(|id| self.info(id).map_err(|e| e.details(json!({"id": id})))).collect::<Result<Vec<_>>>()?;
+        entries.sort_by(|a, b| b.created_at.cmp(&a.created_at).then_with(|| a.id.cmp(&b.id)));
+        Ok(entries)
+    }
+
+    pub fn stored_bytes(&self, id: &str) -> Result<u64> {
+        let (file, _) = self.open(id)?;
+        file.metadata().map(|m| m.len()).map_err(|e| Error::io("Read stored size", e))
+    }
+
+    /// Revalidate every planned record under the writer lock before the first deletion.
+    pub fn remove_batch(&self, expected: &[Metadata]) -> Result<()> {
+        if expected.is_empty() { return Ok(()); }
+        let _lock = self.lock()?;
+        for metadata in expected {
+            let current = self.info(&metadata.id)?;
+            if serde_json::to_vec(&current).ok() != serde_json::to_vec(metadata).ok() {
+                return Err(Error::new("PLAN_CHANGED", 4, "A planned reference changed; preview cleanup again."));
+            }
+        }
+        let mut removed = Vec::new();
+        for metadata in expected {
+            self.remove_unlocked(&metadata.id).map_err(|error| error.details(json!({"removed": removed, "failed": metadata.id})))?;
+            removed.push(metadata.id.clone());
+        }
+        Ok(())
+    }
+
     pub fn remove(&self, id: &str) -> Result<()> {
+        self.path(id)?;
+        let _lock = self.lock()?;
+        self.remove_unlocked(id)
+    }
+
+    fn remove_unlocked(&self, id: &str) -> Result<()> {
+
         // A damaged record can still be removed explicitly by its exact validated ID.
         let path = self.path(id)?;
         fs::remove_file(path).map_err(|e| {

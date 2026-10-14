@@ -2,9 +2,11 @@ mod cli;
 
 use clap::{error::ErrorKind, Parser};
 use cli::{Cli, Command};
-use cpyref::{context::Context, error::{Error, Result}, select::select, store::write_output, MAX_BYTES};
+use cpyref::{context::Context, error::{Error, Result}, select::preview, store::{write_output, Metadata}, MAX_BYTES};
 use serde::Serialize;
 use serde_json::json;
+use sha2::{Digest, Sha256};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs::File, io::{self, Read, Write}, path::Path, process::ExitCode};
 
 fn read_input(path: &Path, limit: usize) -> Result<Vec<u8>> {
@@ -35,12 +37,38 @@ fn print_json(value: &impl Serialize) -> Result<()> {
     writeln!(out).map_err(|e| Error::io("Write stdout", e))
 }
 
+fn now() -> Result<u64> {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs())
+        .map_err(|_| Error::new("CLOCK_ERROR", 5, "The system clock is before the Unix epoch."))
+}
+
+fn matches_filter(metadata: &Metadata, filter: &cli::FilterArgs) -> bool {
+    filter.source.as_ref().is_none_or(|s| metadata.source.contains(s))
+        && filter.note.as_ref().is_none_or(|s| metadata.note.as_deref().unwrap_or("").contains(s))
+}
+
 fn execute(command: Command, context: &Context) -> Result<()> {
     let store = context.store()?;
     match command {
         Command::Copy(args) => {
             let data = read_input(&args.source, args.max_bytes)?;
-            let span = select(&data, &args.spec())?;
+            let preview = preview(&data, &args.spec())?;
+            if args.dry_run {
+                let span = &preview.selected;
+                let mut report = json!({"ok": true, "dry_run": true, "match_count": preview.match_count,
+                    "candidates": preview.candidates, "truncated": preview.truncated,
+                    "selected": span, "bytes": span.byte_end - span.byte_start});
+                if args.show_content {
+                    let bytes = &data[span.range()];
+                    let shown = bytes.len().min(args.preview_bytes as usize);
+                    report["content"] = json!(String::from_utf8_lossy(&bytes[..shown]));
+                    report["content_bytes"] = json!(shown);
+                    report["content_truncated"] = json!(shown < bytes.len());
+                    report["content_encoding"] = json!("utf-8-lossy");
+                }
+                return print_json(&report);
+            }
+            let span = preview.selected;
             let range = span.range();
             let source = if args.source == Path::new("-") {
                 "<stdin>".to_owned()
@@ -48,7 +76,7 @@ fn execute(command: Command, context: &Context) -> Result<()> {
                 // The selected project does not change where relative input paths are opened.
                 context.cwd.join(&args.source).to_string_lossy().into_owned()
             };
-            let metadata = store.put(&data[range], source, span)?;
+            let metadata = store.put_with_options(&data[range], source, span, args.note, context.max_entries)?;
             if args.json {
                 print_json(&json!({"ok": true, "reference": metadata, "context": context.report()}))
             } else {
@@ -66,6 +94,81 @@ fn execute(command: Command, context: &Context) -> Result<()> {
         Command::Info { id } => print_json(&store.info(&id)?),
         Command::Remove { id } => store.remove(&id),
         Command::Context => print_json(&context.report()),
+        Command::List { filter, limit, offset, json: as_json } => {
+            let entries = store.list()?;
+            let entries: Vec<_> = entries.into_iter().filter(|m| matches_filter(m, &filter)).collect();
+            let total = entries.len();
+            let shown: Vec<_> = entries.into_iter().skip(offset).take(limit as usize).collect();
+            if as_json {
+                print_json(&json!({"references": shown, "total": total, "offset": offset, "limit": limit, "context": context.report()}))
+            } else {
+                let mut out = io::stdout().lock();
+                writeln!(out, "REF\tSOURCE\tLINES\tBYTE_RANGE\tBYTES\tCREATED_UNIX\tNOTE").map_err(|e| Error::io("Write list", e))?;
+                for m in shown {
+                    // JSON-escape untrusted fields so notes/paths cannot inject rows or terminal controls.
+                    writeln!(out, "{}\t{}\t{}:{}\t{}:{}\t{}\t{}\t{}", m.id,
+                        json!(m.source), m.span.line_start, m.span.line_end, m.span.byte_start,
+                        m.span.byte_end, m.bytes, m.created_at, json!(m.note.unwrap_or_default()))
+                        .map_err(|e| Error::io("Write list", e))?;
+                }
+                Ok(())
+            }
+        }
+        Command::Stats => {
+            let entries = store.list()?;
+            let now = now()?;
+            let mut ages = [0_usize; 4];
+            let mut stored_bytes = 0_u64;
+            for m in &entries {
+                let age = now.saturating_sub(m.created_at);
+                ages[if age < 86400 { 0 } else if age < 7 * 86400 { 1 } else if age < 30 * 86400 { 2 } else { 3 }] += 1;
+                stored_bytes += store.stored_bytes(&m.id)?;
+            }
+            print_json(&json!({"count": entries.len(), "payload_bytes": entries.iter().map(|m| m.bytes as u64).sum::<u64>(),
+                "stored_bytes": stored_bytes, "largest": entries.iter().max_by_key(|m| m.bytes),
+                "oldest_at": entries.iter().map(|m| m.created_at).min(), "newest_at": entries.iter().map(|m| m.created_at).max(),
+                "age_buckets": {"under_1_day": ages[0], "1_to_7_days": ages[1], "7_to_30_days": ages[2], "30_days_or_more": ages[3]},
+                "context": context.report()}))
+        }
+        Command::Clean { ids, filter, all, older_than, keep_latest, apply, confirm } => {
+            if filter.source.as_deref() == Some("") || filter.note.as_deref() == Some("") {
+                return Err(Error::invalid("Cleanup source/note filters cannot be empty; use explicit --all instead."));
+            }
+            // Explicit IDs or --all select their own set and do not inherit cleanup defaults.
+            let use_defaults = ids.is_empty() && !all;
+            let older_than = older_than.or(if use_defaults { context.cleanup.older_than_days } else { None });
+            let keep_latest = keep_latest.or(if use_defaults { context.cleanup.keep_latest } else { None });
+            let filtered = filter.source.is_some() || filter.note.is_some() || older_than.is_some() || keep_latest.is_some();
+            if ids.is_empty() && !all && !filtered {
+                return Err(Error::invalid("Cleanup requires complete IDs, filters, --keep-latest, or explicit --all."));
+            }
+            if !ids.is_empty() && (all || filtered) {
+                return Err(Error::invalid("Cleanup IDs cannot be combined with filters or --all."));
+            }
+            let entries = store.list()?;
+            for id in &ids {
+                if !entries.iter().any(|m| &m.id == id) { store.info(id)?; }
+            }
+            let now = now()?;
+            let selected: Vec<_> = entries.into_iter().enumerate().filter(|(index, m)| {
+                (ids.is_empty() || ids.contains(&m.id)) && matches_filter(m, &filter)
+                    && keep_latest.is_none_or(|keep| *index >= keep)
+                    && older_than.is_none_or(|days| now.saturating_sub(m.created_at) > u64::from(days) * 86400)
+            }).map(|(_, m)| m).collect();
+            // Bind the preview to this exact space and record set, not merely a count or an age rule.
+            let encoded = serde_json::to_vec(&(context.store_path.as_os_str().as_encoded_bytes(), &selected))
+                .map_err(|e| Error::invalid(e.to_string()))?;
+            let token = format!("{:x}", Sha256::digest(encoded));
+            if apply {
+                if confirm.as_deref() != Some(&token) {
+                    return Err(Error::new("PLAN_CHANGED", 4, "Cleanup confirmation does not match this preview; preview again."));
+                }
+                store.remove_batch(&selected)?;
+            }
+            print_json(&json!({"applied": apply, "count": selected.len(),
+                "payload_bytes": selected.iter().map(|m| m.bytes as u64).sum::<u64>(),
+                "references": selected, "confirm": token, "context": context.report()}))
+        }
     }
 }
 

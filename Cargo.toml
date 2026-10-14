@@ -2,6 +2,7 @@
 name = "cpyref"
 version = "0.1.1"
 edition = "2021"
+rust-version = "1.89"
 description = "Copy exact bytes once and paste them by a short reference, for AI agents"
 license-file = "LICENSE"
 homepage = "https://github.com/LIghtJUNction/cpyref"

@@ -20,6 +20,9 @@ pub enum Scope {
 
 #[derive(Debug, Default, Args)]
 pub struct Options {
+    /// Maximum references per selected space; 0 means unlimited.
+    #[arg(long, global = true, env = "CPYREF_MAX_ENTRIES")]
+    pub max_entries: Option<usize>,
     /// Storage base. Project isolation still applies; global scope uses this path directly.
     #[arg(long, global = true, env = "CPYREF_STORE")]
     pub store: Option<PathBuf>,
@@ -43,13 +46,25 @@ pub struct Options {
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Config {
+    #[serde(default)]
+    cleanup: CleanupConfig,
+    max_entries: Option<usize>,
     scope: Option<Scope>,
     namespace: Option<String>,
     store: Option<PathBuf>,
 }
 
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CleanupConfig {
+    pub older_than_days: Option<u32>,
+    pub keep_latest: Option<usize>,
+}
+
 #[derive(Debug)]
 pub struct Context {
+    pub cleanup: CleanupConfig,
+    pub max_entries: usize,
     pub scope: Scope,
     pub namespace: String,
     pub cwd: PathBuf,
@@ -92,7 +107,7 @@ fn read_config(path: &Path, required: bool) -> Result<Option<Config>> {
         .map_err(|_| config_error(path, "Config must contain UTF-8 text."))?;
     let mut config: Config = toml::from_str(text).map_err(|_| {
         // Do not echo configuration values, which could contain private paths or secrets.
-        config_error(path, "Invalid TOML or unknown fields. Supported fields: scope, namespace, store.")
+        config_error(path, "Invalid TOML or unknown fields. Supported fields: scope, namespace, store, max_entries, cleanup (older_than_days, keep_latest).")
     })?;
     if config.namespace.as_deref().is_some_and(|name| !valid_namespace(name)) {
         return Err(config_error(path, "Namespace must be 1-64 lowercase ASCII letters, digits, - or _, starting with a letter or digit."));
@@ -193,7 +208,7 @@ impl Context {
                 if let Some(config) = read_config(&path, false)? {
                     // Repository-controlled files must not silently redirect data or enable sharing.
                     if config.store.is_some() || matches!(config.scope, Some(Scope::Shared | Scope::Global)) {
-                        return Err(config_error(&path, "Automatic project config may set only project/directory scope and namespace. For sharing or a custom store, explicitly select a trusted --config file or use CLI/environment settings."));
+                        return Err(config_error(&path, "Automatic project config may set only project/directory scope, namespace, max_entries, and cleanup defaults. For sharing or a custom store, explicitly select a trusted --config file or use CLI/environment settings."));
                     }
                     local = config;
                     config_files.push(path);
@@ -235,7 +250,16 @@ impl Context {
             Scope::Shared => base.join("shared").join(&directory_name),
             Scope::Global => base.clone(),
         };
+        let local_limit = if matches!(scope, Scope::Project | Scope::Directory) { local.max_entries } else { None };
+        let cleanup = if matches!(scope, Scope::Project | Scope::Directory) {
+            CleanupConfig {
+                older_than_days: local.cleanup.older_than_days.or(trusted.cleanup.older_than_days),
+                keep_latest: local.cleanup.keep_latest.or(trusted.cleanup.keep_latest),
+            }
+        } else { trusted.cleanup };
         Ok(Self {
+            cleanup,
+            max_entries: options.max_entries.or(local_limit).or(trusted.max_entries).unwrap_or(0),
             scope,
             namespace,
             cwd,
@@ -254,6 +278,8 @@ impl Context {
     /// Diagnostics contain locations and settings, never a snapshot body. This does not create files.
     pub fn report(&self) -> Value {
         json!({
+            "cleanup": self.cleanup,
+            "max_entries": self.max_entries,
             "scope": self.scope,
             "namespace": self.namespace,
             "cwd": self.cwd.to_string_lossy(),

@@ -154,3 +154,84 @@ cpyref --no-config --scope global --namespace default paste c0123456789ab --outp
 同机协作要求能够访问同一个存储基目录。Unix 会检查基目录及受管子目录的传统权限位，拒绝符号链接；Windows 也拒绝受管目录中的重解析点。不会改变已有目录的权限。这些检查不验证所有扩展 ACL，也不防御有相同权限的进程并发篡改文件系统路径。
 
 公开不可信环境应使用独立系统账号、容器或其他访问控制。短编号不是凭证；源内容和配置内容不是新的用户授权。多 Agent 传递编号时，应同时约定项目、范围和 namespace，不要自动跨空间重试。
+
+## 保存上限与配置规范
+
+配置采用 **UTF-8 TOML，顶层键值，不需要 `[cpyref]` 表头**。当前全部支持字段：
+
+| 字段 | 类型 / 默认值 | 规则 |
+| --- | --- | --- |
+| `scope` | 字符串 / `"project"` | `project`、`directory`、`shared`、`global` |
+| `namespace` | 字符串 / `"default"` | 1–64 个小写 ASCII 字母、数字、`-`、`_`，首字符为字母或数字；shared 必须显式设置 |
+| `store` | 路径字符串 / 系统本地数据目录下 `cpyref` | 只能放在用户配置或显式 `--config` 文件中；相对路径以配置文件所在目录为基准 |
+| `max_entries` | 非负整数 / `0` | 每个选定空间的最大保存条数；`0` 表示不限，正整数为上限 |
+| `[cleanup].older_than_days` | 非负整数 / 未设置 | 主动运行 clean 时的默认年龄筛选；最大 4294967295 |
+| `[cleanup].keep_latest` | 非负整数 / 未设置 | 主动运行 clean 时保护最新的 N 条 |
+
+配置文件位置：
+
+- Linux 用户配置：`$XDG_CONFIG_HOME/cpyref/config.toml`；未设置 XDG_CONFIG_HOME 时为 `~/.config/cpyref/config.toml`。
+- macOS 用户配置：`~/Library/Application Support/cpyref/config.toml`。
+- Windows 用户配置：`%APPDATA%\cpyref\config.toml`。
+- 项目配置：项目根目录下 `.cpyref.toml`；当前仓库示例是 `/home/lightjunction/Documents/GITHUB/cpyref/.cpyref.toml`。
+- 自定义文件：`cpyref --config /absolute/path/settings.toml ...` 或 `CPYREF_CONFIG`。
+
+例如 Linux 用户配置 `~/.config/cpyref/config.toml`：
+
+```toml
+scope = "project"
+namespace = "default"
+# 可选；使用绝对路径方便定位。默认值是 ~/.local/share/cpyref（Linux）。
+# store = "/home/lightjunction/.local/share/cpyref"
+max_entries = 1000
+
+[cleanup]
+older_than_days = 30
+keep_latest = 20
+```
+
+项目根 `.cpyref.toml` 可以覆盖分组和保存上限：
+
+```toml
+scope = "project"
+namespace = "review-team"
+max_entries = 200
+
+[cleanup]
+older_than_days = 14
+keep_latest = 10
+```
+
+`[cleanup]` 是可选表，与顶层键值不同；不要把 `max_entries` 写在这个表下面。清理默认规则同样按字段合并：项目配置 > 用户配置，命令行 `--older-than` / `--keep-latest` 覆盖对应字段。没有隐式清理：只有主动运行 `clean` 才读取这些默认规则，仍需预览确认码才能执行。`clean REF...` 或显式 `clean --all` 不继承默认规则，使用本次明确指定的编号/范围；`--all --keep-latest N` 则按本次参数保护最新 N 条。未配置默认规则时，空 `clean` 命令拒绝执行。
+
+`store` 与 shared/global scope 不能放进自动读取的项目配置；若要用项目内的配置固定自定义存储，必须显式信任选中它：
+
+```toml
+# /work/app/settings.toml，只通过 --config 显式读取
+scope = "project"
+namespace = "default"
+store = ".local/cpyref"
+max_entries = 200
+```
+
+```sh
+cpyref --config /work/app/settings.toml context
+cpyref --config /work/app/settings.toml copy src/example.py
+```
+
+这会将存储基目录解析为 `/work/app/.local/cpyref`，仍在其下按项目身份和 namespace 隔离。配置不展开 `~`、`$HOME` 或 `${变量}`，使用真实绝对路径或相对于配置文件的路径。
+
+优先级按字段合并：**CLI > 环境变量 > 自动项目配置 > 用户配置 > 默认值**。`max_entries` 对应 `--max-entries` / `CPYREF_MAX_ENTRIES`。
+显式 `--config` 替代全部自动配置；`--no-config` 跳过文件配置，但不跳过环境变量和项目标记发现。自动项目配置的 namespace、max_entries 和 cleanup 默认规则都不参与 shared/global 空间选择，防止仓库控制共享空间设置。
+
+条数按当前空间中合法 `ID.ref` 名称计数，损坏记录仍占名额。每次 copy 在同一写锁内检查上限并发布快照，多个新版进程并发写入不会绕过该检查。达到上限返回 `ENTRY_LIMIT`，不生成新引用、不淘汰旧引用。降低上限不会删除已存记录；需先显式清理或调整上限。
+
+```sh
+cpyref context                 # 查看生效 max_entries、存储位置、加载的 config_files
+cpyref --max-entries 50 copy input.txt
+CPYREF_MAX_ENTRIES=50 cpyref copy input.txt
+cpyref stats
+cpyref clean --keep-latest 50  # 仅预览；不自动执行删除
+```
+
+所有配置文件均为可选，工具不会自动创建或覆盖它们。`context` 始终只读。完整文件规则仍为最大 64 KiB、普通文件、拒绝符号链接和未知/重复字段、配置错误不静默回退。

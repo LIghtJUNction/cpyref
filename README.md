@@ -73,6 +73,23 @@ cpyref context
 
 直接写文件时优先使用 `--output`，避免 shell 管道或重定向改变二进制内容。
 
+## 查找、预览与清理
+
+```sh
+cpyref copy src/example.py --from 'def example' --to 'def next' --exclude-end --note '修改前的函数'
+cpyref list --limit 20
+cpyref list --source 'src/' --note '修改前'
+cpyref copy src/example.py --lines 10:20 --dry-run
+cpyref stats
+cpyref clean --older-than 30 --keep-latest 20
+# 检查预览，重复相同条件并填入返回的 confirm 值才会删除
+cpyref clean --older-than 30 --keep-latest 20 --apply --confirm PREVIEW_TOKEN
+```
+
+`--exclude-start` / `--exclude-end` 分别排除起止标记；默认仍包含两端。预览与列表默认不展开正文。
+Linux 用户配置是 `~/.config/cpyref/config.toml`，项目配置是项目根 `.cpyref.toml`，用顶层 TOML 字段 `max_entries = 200` 设置当前空间保存上限（`0` 为不限）。达到上限拒绝新增，不自动删除旧引用。
+可选 `[cleanup]` 表配置 `older_than_days` 和 `keep_latest`，供主动运行 `clean` 时预览；不会自动清理。完整路径、字段、优先级见[配置规范](docs/project-spaces.md#保存上限与配置规范)，命令细节见[命令参考](docs/cli-reference.md#备注查找与复制预览)。
+
 ## 选择内容
 
 | 需求 | 参数示例 |
@@ -114,7 +131,7 @@ cpyref --scope shared --namespace team-build paste c0123456789ab
 - 保存的是独立快照。原文件修改或删除后仍可粘贴；空格、缩进、CRLF、NUL 和非 ASCII 字符保持原样。整文件与按行复制支持二进制，文本匹配要求搜索范围为 UTF-8。
 - 默认输入上限为 16 MiB，可用 `--max-bytes` 调整，硬上限为 128 MiB。限制按整个输入计算；输入在内存中处理。
 - `paste` 在输出前校验正文长度与 SHA-256；`info` 只读取元数据。完整错误代码和存储细节见[命令参考](docs/cli-reference.md)。
-- 数据存于用户本地数据目录下的 `cpyref`，未加密。短编号不是凭证，项目隔离不阻止同账号程序访问。快照没有自动过期或总容量配额，可用 `remove` 删除。
+- 数据存于用户本地数据目录下的 `cpyref`，未加密。短编号不是凭证，项目隔离不阻止同账号程序访问。快照没有自动过期或总磁盘配额；可配置每空间 `max_entries` 保存条数，用 `clean` 预览并显式清理。
 
 Agent 的调用顺序、失败处理和内容来源约定见 [Agent 调用约定](docs/agent-contract.md)。
 

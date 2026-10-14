@@ -320,3 +320,53 @@ fn symlink_config_files_are_rejected() {
     let options = Options { config: Some(alias), no_config: false, ..f.options() };
     assert_eq!(Context::resolve_at(&options, &root, None).unwrap_err().code, "CONFIG_ERROR");
 }
+
+#[test]
+fn max_entries_uses_config_precedence_and_ignores_local_limit_for_shared_scope() {
+    let f = Fixture::new();
+    let root = f.repo("project");
+    let user = f.dir.path().join("user.toml");
+    fs::write(&user, "max_entries = 100\nnamespace = 'trusted'\n").unwrap();
+    fs::write(root.join(".cpyref.toml"), "max_entries = 20\n").unwrap();
+    let mut options = Options { store: Some(f.dir.path().join("store")), ..Options::default() };
+    assert_eq!(Context::resolve_at(&options, &root, Some(&user)).unwrap().max_entries, 20);
+    options.max_entries = Some(0);
+    assert_eq!(Context::resolve_at(&options, &root, Some(&user)).unwrap().max_entries, 0);
+    options.max_entries = None;
+    options.scope = Some(Scope::Shared);
+    assert_eq!(Context::resolve_at(&options, &root, Some(&user)).unwrap().max_entries, 100);
+    options.no_config = true;
+    options.scope = None;
+    assert_eq!(Context::resolve_at(&options, &root, Some(&user)).unwrap().max_entries, 0);
+}
+
+#[test]
+fn invalid_entry_limits_fail_before_writing() {
+    let f = Fixture::new();
+    let root = f.repo("project");
+    let config = root.join(".cpyref.toml");
+    for text in ["max_entries = -1", "max_entries = 1.5", "max_entries = '10'", "max_entries = true"] {
+        fs::write(&config, text).unwrap();
+        let options = Options { no_config: false, ..f.options() };
+        assert_eq!(Context::resolve_at(&options, &root, None).unwrap_err().code, "CONFIG_ERROR");
+    }
+    assert!(!f.dir.path().join("store").exists());
+}
+
+#[test]
+fn cleanup_defaults_merge_by_field_and_do_not_leak_from_project_to_shared() {
+    let f = Fixture::new();
+    let root = f.repo("project");
+    let user = f.dir.path().join("user.toml");
+    fs::write(&user, "namespace = 'team'\n[cleanup]\nolder_than_days = 30\nkeep_latest = 20\n").unwrap();
+    fs::write(root.join(".cpyref.toml"), "[cleanup]\nkeep_latest = 5\n").unwrap();
+    let mut options = Options { no_config: false, ..f.options() };
+    let c = Context::resolve_at(&options, &root, Some(&user)).unwrap();
+    assert_eq!(c.cleanup.older_than_days, Some(30));
+    assert_eq!(c.cleanup.keep_latest, Some(5));
+    options.scope = Some(Scope::Shared);
+    assert_eq!(Context::resolve_at(&options, &root, Some(&user)).unwrap().cleanup.keep_latest, Some(20));
+    options.no_config = true;
+    options.scope = None;
+    assert!(Context::resolve_at(&options, &root, Some(&user)).unwrap().cleanup.keep_latest.is_none());
+}

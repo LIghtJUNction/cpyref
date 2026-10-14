@@ -272,3 +272,20 @@ fn permissive_managed_ancestor_is_rejected() {
     fs::set_permissions(f.base.join("projects"), fs::Permissions::from_mode(0o755)).unwrap();
     failure(f.run(&f.a, &["paste", &id]), 5, "UNSAFE_STORE");
 }
+
+#[test]
+fn inventory_stats_and_cleanup_never_cross_project_or_namespace() {
+    let f = Fixture::new();
+    let id = f.copy(&f.a, &[]);
+    let other = f.copy(&f.a, &["--namespace", "other"]);
+    assert_eq!(serde_json::from_slice::<Value>(&success(f.run(&f.b, &["list", "--json"]))).unwrap()["total"], 0);
+    assert_eq!(serde_json::from_slice::<Value>(&success(f.run(&f.b, &["stats"]))).unwrap()["count"], 0);
+    let preview: Value = serde_json::from_slice(&success(f.run(&f.b, &["clean", "--all"]))).unwrap();
+    assert_eq!(preview["count"], 0);
+    success(f.run(&f.b, &["clean", "--all", "--apply", "--confirm", preview["confirm"].as_str().unwrap()]));
+    assert_eq!(success(f.run(&f.a, &["paste", &id])), b"PROJECT_A_SECRET");
+    let preview: Value = serde_json::from_slice(&success(f.run(&f.a, &["clean", "--all"]))).unwrap();
+    assert_eq!(preview["count"], 1);
+    success(f.run(&f.a, &["clean", "--all", "--apply", "--confirm", preview["confirm"].as_str().unwrap()]));
+    assert_eq!(success(f.run(&f.a, &["--namespace", "other", "paste", &other])), b"PROJECT_A_SECRET");
+}
