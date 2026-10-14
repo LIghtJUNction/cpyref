@@ -1,4 +1,5 @@
 //! Exact-byte snapshots and strict selectors for agent copy/paste workflows.
+pub mod context;
 pub mod error;
 pub mod select;
 pub mod store;
