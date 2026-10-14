@@ -89,6 +89,8 @@ fn matches_filter(metadata: &Metadata, filter: &cli::FilterArgs) -> bool {
 fn execute(command: Command, context: &Context) -> Result<()> {
     let store = context.store()?;
     match command {
+        Command::Insert(args) => print_json(&cpyref::edit::execute(context, &args, false)?),
+        Command::Replace(args) => print_json(&cpyref::edit::execute(context, &args, true)?),
         Command::Copy(args) => {
             let data = read_input(&args.source, args.max_bytes)?;
             let preview = preview(&data, &args.spec())?;

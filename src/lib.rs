@@ -11,3 +11,6 @@ pub mod verify;
 
 pub const DEFAULT_MAX_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_BYTES: usize = 128 * 1024 * 1024;
+
+pub mod edit;
+pub mod redact;

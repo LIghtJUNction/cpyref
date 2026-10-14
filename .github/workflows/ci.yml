@@ -1,13 +1,16 @@
-name: Manual Rust checks
+name: Rust CI
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: rust-${{ github.ref }}
+  group: rust-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -18,16 +21,36 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
       - name: Install stable Rust
-        run: rustup toolchain install stable --profile minimal --component clippy
+        run: rustup toolchain install stable --profile minimal --component clippy --component rustfmt
       - name: Select stable Rust
         run: rustup default stable
+      - name: Check formatting
+        run: cargo fmt --all -- --check
       - name: Test library and CLI
-        run: cargo test --all-targets
+        run: cargo test --locked --all-targets
       - name: Check warnings
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Build the tested CLI
+        run: cargo build --locked
+      - name: Test packaging, edits and run protections
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Measure exact-byte command scenarios
+        if: runner.os == 'Linux'
+        run: python scripts/benchmark.py --binary target/debug/cpyref --build-label debug --repeats 5
+
+  msrv:
+    name: Minimum Rust 1.89
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: cargo +1.89.0 check --locked --all-targets

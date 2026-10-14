@@ -229,6 +229,11 @@ impl Store {
         Ok(file)
     }
 
+    pub(crate) fn edit_lock(&self) -> Result<File> {
+        self.prepare()?;
+        self.lock()
+    }
+
     pub fn put_with_options(
         &self,
         data: &[u8],

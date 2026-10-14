@@ -119,7 +119,7 @@ cpyref verify REF
 
 仅 original_match 退出 0，其余状态退出 10。匹配候选最多 20 个，位置从 0 起算且结束偏移不包含在内。来源读取限制为 128 MiB，超过限制报 SIZE_LIMIT，不能当作已变化。权限错误、文件类型变化及读取中检测到修改也会明确报错。
 
-文件其他部分变化不会自动使片段失效；也不只凭行号或修改时间判定。所有状态都返回 `semantic_position_verified=false`：字节仍存在不证明仍在原来的函数、作用域或语义位置。本轮不提供自动插入、替换或 patch，也不改变 paste --force 的整文件输出行为。
+文件其他部分变化不会自动使片段失效；也不只凭行号或修改时间判定。所有状态都返回 `semantic_position_verified=false`：字节仍存在不证明仍在原来的函数、作用域或语义位置。局部插入和替换由 insert/replace 提供，要求明确目标哈希，见 hardening.md；paste --force 仍为整文件输出。
 
 ## 一条命令交接引用
 
@@ -140,3 +140,5 @@ bytes、snapshot、run 共用短编号、list、stats、max_entries 和 clean。
 关联独立 source snapshot 的 run 会声明依赖。remove/clean 不允许删除仍被保留记录依赖的快照，预览就报 REF_IN_USE；可以显式将依赖者和快照一起选入同一批次，工具按依赖顺序删除，不自动级联扩大范围。执行前在写锁内再次检查依赖，避免预览后新记录出现造成悬空引用。批量删除仍可能因文件系统错误部分成功，removed 字段列出已删项。
 
 元数据损坏会阻止 list 和批量清理；可按完整编号逐条 remove 损坏记录进行恢复。已损坏、无法读取的头部不能提供可靠依赖保护。依赖保护由新版执行，旧版本或直接操作存储的程序不能保证这一保护。原有字节快照不需要迁移，copy 默认短 ID、paste 不添换行、输出保护和显式共享边界保持不变。
+
+明确敏感值的写入前处理见 [hardening.md](hardening.md)：`run --redact-env NAME` 只处理明确指定值，处理后的日志不再声称是原始字节。

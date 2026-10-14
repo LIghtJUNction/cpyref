@@ -59,6 +59,8 @@ pub struct Artifact {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunRecord {
+    #[serde(default)]
+    pub redacted_env: Vec<String>,
     pub schema: u8,
     pub command: Vec<String>,
     pub cwd: PathBuf,
@@ -84,6 +86,7 @@ pub struct RunRecord {
 }
 
 pub struct RunOptions {
+    pub redact_env: Vec<String>,
     pub command: Vec<String>,
     pub parser: String,
     pub snapshot: Option<String>,
@@ -129,6 +132,7 @@ pub struct RunLimits {
     pub min_free_bytes: u64,
 }
 struct CaptureState {
+    raw_bytes: AtomicU64,
     bytes: AtomicU64,
     // 1: log cap, 2: I/O failure; first capture failure wins.
     reason: AtomicU8,
@@ -141,17 +145,28 @@ impl CaptureState {
             .compare_exchange(0, reason, Ordering::SeqCst, Ordering::SeqCst);
     }
 }
+fn reserve(counter: &AtomicU64, cap: u64, requested: usize) -> usize {
+    let mut used = counter.load(Ordering::SeqCst);
+    loop {
+        let allowed = cap.saturating_sub(used).min(requested as u64);
+        match counter.compare_exchange(used, used + allowed, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => return allowed as usize,
+            Err(current) => used = current,
+        }
+    }
+}
+
 fn capture(
     mut pipe: impl Read,
     mut file: File,
     state: Arc<CaptureState>,
     cap: u64,
+    mut redactor: crate::redact::Redactor,
 ) -> io::Result<()> {
     let result = (|| {
         let mut buffer = [0_u8; 64 * 1024];
-        while !state.cancel.load(Ordering::SeqCst) {
+        while !state.cancel.load(Ordering::SeqCst) && state.reason.load(Ordering::SeqCst) == 0 {
             let n = match pipe.read(&mut buffer) {
-                Ok(0) => break,
                 Ok(n) => n,
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -160,19 +175,22 @@ fn capture(
                 }
                 Err(e) => return Err(e),
             };
-            let previous = state
-                .bytes
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |used| {
-                    Some(used.saturating_add(n as u64).min(cap))
-                })
-                .expect("infallible byte reservation");
-            let keep = (cap - previous).min(n as u64) as usize;
-            file.write_all(&buffer[..keep])?;
-            if keep < n {
+            if state.cancel.load(Ordering::SeqCst) || state.reason.load(Ordering::SeqCst) != 0 {
+                break;
+            }
+            let allowed = reserve(&state.raw_bytes, cap, n);
+            let bytes = redactor.feed(&buffer[..allowed], n == 0);
+            let keep = reserve(&state.bytes, cap, bytes.len());
+            file.write_all(&bytes[..keep])?;
+            if allowed < n || keep < bytes.len() {
                 state.stop(1);
                 break;
             }
+            if n == 0 {
+                break;
+            }
         }
+        // A cancelled stream drops its pending original suffix, never flushing it raw.
         file.sync_all()
     })();
     if result.is_err() {
@@ -475,6 +493,7 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
     if options.command.is_empty() {
         return Err(Error::invalid("run requires a command after --."));
     }
+    let redaction = crate::redact::Prepared::new(&options.redact_env)?;
     let store = context.store()?;
     let parser = match options.parser.as_str() {
         "auto" => {
@@ -549,15 +568,20 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
         return Err(error);
     }
     let state = Arc::new(CaptureState {
+        raw_bytes: AtomicU64::new(0),
         bytes: AtomicU64::new(0),
         reason: AtomicU8::new(0),
         cancel: AtomicBool::new(false),
     });
     let cap = options.limits.max_log_bytes;
     let out_state = Arc::clone(&state);
-    let out_thread = std::thread::spawn(move || capture(out, out_file, out_state, cap));
+    let out_redactor = redaction.stream();
+    let out_thread =
+        std::thread::spawn(move || capture(out, out_file, out_state, cap, out_redactor));
     let err_state = Arc::clone(&state);
-    let err_thread = std::thread::spawn(move || capture(err, err_file, err_state, cap));
+    let err_redactor = redaction.stream();
+    let err_thread =
+        std::thread::spawn(move || capture(err, err_file, err_state, cap, err_redactor));
     let mut status = None;
     let mut termination_reason = None;
     let mut last_space_check = Instant::now();
@@ -744,7 +768,8 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
         }
         let record = RunRecord {
             schema: 1,
-            command: options.command.clone(),
+            command: redaction.command(&options.command),
+            redacted_env: redaction.names.clone(),
             cwd: context.cwd.clone(),
             started_at,
             finished_at: finished_at?,
@@ -832,7 +857,7 @@ pub fn summary(id: &str, record: &RunRecord) -> Value {
     }
     json!({"reference": id, "kind": "run", "recording_status": "saved", "command_exit": record.command_exit,
         "signal": record.signal, "wrapper_exit": record.wrapper_exit, "logs_complete": record.logs_complete,
-        "limits": record.limits, "termination_reason": record.termination_reason,
+        "limits": record.limits, "termination_reason": record.termination_reason, "redacted_env": record.redacted_env,
         "stdout_bytes": record.stdout_bytes, "stderr_bytes": record.stderr_bytes, "duration_ms": record.duration_ms, "started_at": record.started_at, "finished_at": record.finished_at,
         "analysis": record.analysis, "snapshot": record.snapshot, "source_after": source_after,
         "artifact_count": record.artifacts.len()})

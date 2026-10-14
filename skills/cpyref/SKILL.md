@@ -168,3 +168,17 @@ The free-space reserve defaults to 512 MiB plus capture/packing headroom. No unl
 Timeout exits 124; log/disk protection exits 125. Preserve partial logs; `logs_complete=false` means
 counts are unknown even if a completed suite appears in the prefix. Never retry commands automatically.
 These protections do not impose a quota on files written by the command itself or sandbox escaped descendants.
+
+## Safe edits and explicit redaction (0.3.0 development)
+
+Use `insert` or `replace` only for an authorized edit with a complete bytes reference.
+Preview with `--dry-run`, inspect positions and sizes, then pass `before_sha256` using
+`--expect-sha256` on the same operation. Do not bypass TARGET_CHANGED or hide AMBIGUOUS.
+No newlines or source-language structure are inferred.
+
+Keep the existing run timeout, byte budget and free-space checks. Do not disable them.
+`--redact-env NAME` replaces the selected environment value in logs and stored argv
+before disk writes. Values split between reads are handled. Missing/invalid settings
+fail before execution. No automatic secret detection, encryption or protection of
+encoded values, path metadata or child-created files is provided. Redacted records
+are not byte-exact original output. Check redacted_env and logs_complete separately.

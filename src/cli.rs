@@ -16,6 +16,10 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Insert saved bytes at one explicit target position. Writing requires a target hash.
+    Insert(Box<cpyref::edit::Args>),
+    /// Replace a unique target selection with saved bytes. Writing requires a target hash.
+    Replace(Box<cpyref::edit::Args>),
     /// Run a command, retain complete local logs, and print only a bounded JSON summary.
     Run(RunArgs),
     /// Inspect a saved run; expand logs only with an explicit stream or --failed.
@@ -241,6 +245,9 @@ impl CopyArgs {
 
 #[derive(Debug, Args)]
 pub struct RunArgs {
+    /// Redact this environment variable's exact value from logs and stored argv before saving.
+    #[arg(long)]
+    pub redact_env: Vec<String>,
     /// Combined stdout/stderr byte cap (default 64 MiB; maximum 1 GiB).
     #[arg(long, env = "CPYREF_RUN_MAX_LOG_BYTES")]
     pub max_log_bytes: Option<u64>,
