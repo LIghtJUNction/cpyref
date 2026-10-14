@@ -591,7 +591,13 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
             && out_thread.is_finished()
             && err_thread.is_finished()
         {
-            break;
+            // A capture thread may have set the guard after the earlier load but before
+            // is_finished. Re-read only after both completions, before declaring EOF complete.
+            match state.reason.load(Ordering::SeqCst) {
+                0 => break,
+                1 => termination_reason = Some("log_limit".into()),
+                _ => termination_reason = Some("capture_failed".into()),
+            }
         }
         if termination_reason.is_none()
             && timer.elapsed() >= Duration::from_secs(options.limits.timeout_seconds)

@@ -1,6 +1,6 @@
 [package]
 name = "cpyref"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 rust-version = "1.89"
 description = "Copy exact bytes once and paste them by a short reference, for AI agents"
