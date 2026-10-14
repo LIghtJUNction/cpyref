@@ -128,4 +128,4 @@ cargo clippy --locked --all-targets -- -D warnings
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 LIghtJUNction
+[Agent Upstream License（AUL）1.0-draft.1](LICENSE) © 2026 LIghtJUNction。参见 [Agent 执行规则](AGENTS.md) 与 [上游配置](UPSTREAM.toml)。这是自定义许可证草案，尚未获 OSI 批准。此前发布的 MIT 版本仍按原条款使用；原许可证保存在 [LICENSE.MIT](LICENSE.MIT)。已单独授权的第三方材料仍适用原条款。

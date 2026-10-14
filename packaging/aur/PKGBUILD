@@ -1,3 +1,5 @@
+# Existing AUR recipe builds crates.io 0.1.1, published under MIT.
+# Change its license only when publishing a new crate that actually uses AUL.
 # Maintainer: LIghtJUNction <lightjunction.me@gmail.com>
 pkgname=cpyref
 pkgver=0.1.1

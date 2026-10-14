@@ -10,7 +10,7 @@ priority: optional
 maintainer: LIghtJUNction <lightjunction.me@gmail.com>
 description: Copy exact bytes once and paste them by a short reference, for AI agents
 homepage: https://github.com/LIghtJUNction/cpyref
-license: MIT
+license: LicenseRef-AUL-1.0-draft.1
 umask: 0o022
 
 # The release workflow supplies static musl binaries. No libc or other shared

@@ -3,14 +3,14 @@ name = "cpyref"
 version = "0.1.1"
 edition = "2021"
 description = "Copy exact bytes once and paste them by a short reference, for AI agents"
-license = "MIT"
+license-file = "LICENSE"
 homepage = "https://github.com/LIghtJUNction/cpyref"
 repository = "https://github.com/LIghtJUNction/cpyref"
 readme = "README.md"
 keywords = ["cli", "clipboard", "ai", "agents", "copy"]
 categories = ["command-line-utilities", "development-tools"]
 publish = ["crates-io"]
-include = ["src/**", "tests/*.rs", "docs/**", "skills/**", "examples/**", "Cargo.toml", "Cargo.lock", "LICENSE", "README.md"]
+include = ["src/**", "tests/*.rs", "docs/**", "skills/**", "examples/**", "Cargo.toml", "Cargo.lock", "LICENSE", "LICENSE.MIT", "AGENTS.md", "UPSTREAM.toml", "README.md"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive", "env"] }

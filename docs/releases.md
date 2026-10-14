@@ -27,7 +27,7 @@ yay -S cpyref
 
 Linux 二进制使用 musl 静态链接。Windows 使用 MSVC；macOS 分 Intel 与 Apple Silicon 两种构建。Windows/macOS 文件没有 Authenticode 或 Apple Developer ID 签名。
 
-每次 Release 都附带 `SHA256SUMS`，可在下载后核对文件摘要。压缩包也包含 MIT 许可证、使用文档和 `skills/cpyref` 配套 Agent 技能。Linux 发行版包将技能放在 `/usr/share/doc/cpyref/skills/cpyref`。
+每次 Release 都附带 `SHA256SUMS`，可在下载后核对文件摘要。压缩包也包含构建该版本时适用的许可证、使用文档和 `skills/cpyref` 配套 Agent 技能。Linux 发行版包将技能放在 `/usr/share/doc/cpyref/skills/cpyref`。
 
 ## 发布新版本
 
@@ -51,3 +51,5 @@ cargo publish --locked
 ```
 
 AUR 打包文件位于 `packaging/aur/`。更新版本与源码 SHA-256，在 Arch Linux 上运行 `makepkg` 验证后，用 `makepkg --printsrcinfo` 更新 `.SRCINFO`，再提交到 AUR 包仓库的 `master`。
+
+许可证迁移：仓库 `main` 从 2026-10-15 开始采用 AUL 1.0-draft.1，已有的 `cpyref` 0.1.1 crates.io 包及其 AUR 包仍是 MIT。下一次发布时，更新 AUR 的许可证、`PKGBUILD` 与 `.SRCINFO`，并核对安装包内的 LICENSE；不要把旧 MIT 构建重新标记为 AUL。

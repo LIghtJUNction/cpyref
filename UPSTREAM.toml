@@ -1,0 +1,7 @@
+# Owner-authorized upstream designation for this original project.
+# Cloned forks must decide independently; this is not their own election.
+schema_version = 1
+license = "LicenseRef-AUL-1.0-draft.1"
+repository = "https://github.com/LIghtJUNction/cpyref"
+mode = "independent"
+upstream = "https://github.com/LIghtJUNction/cpyref"
