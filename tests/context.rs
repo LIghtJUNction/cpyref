@@ -292,7 +292,9 @@ fn symlink_alias_resolves_to_the_same_project() {
     assert_eq!(f.context(&root).store_path, f.context(&alias).store_path);
 }
 
-#[cfg(unix)]
+// Linux CI can create these names. macOS CI rejects them with EILSEQ.
+// A filesystem-independent unit test in context.rs covers native-byte hashing on all Unix.
+#[cfg(target_os = "linux")]
 #[test]
 fn non_utf8_paths_do_not_collapse_into_one_space() {
     use std::{ffi::OsStr, os::unix::ffi::OsStrExt};

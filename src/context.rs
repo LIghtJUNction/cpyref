@@ -276,3 +276,23 @@ impl Context {
         }
     }
 }
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::{identity, Scope};
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::Path};
+
+    #[test]
+    fn path_identity_preserves_non_utf8_bytes_without_filesystem_access() {
+        // macOS filesystems may reject these names. Hashing must still use native bytes,
+        // not a lossy display string, on every Unix platform.
+        let a = Path::new(OsStr::from_bytes(b"/project-\xff"));
+        let b = Path::new(OsStr::from_bytes(b"/project-\xfe"));
+        assert_eq!(a.to_string_lossy(), b.to_string_lossy());
+        for scope in [Scope::Project, Scope::Directory] {
+            assert_ne!(identity(scope, a), identity(scope, b));
+            assert_eq!(identity(scope, a).len(), 64);
+        }
+        assert_ne!(identity(Scope::Project, a), identity(Scope::Directory, a));
+    }
+}
