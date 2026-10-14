@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["cli", "clipboard", "ai", "agents", "copy"]
 categories = ["command-line-utilities", "development-tools"]
 publish = ["crates-io"]
-include = ["src/**", "tests/*.rs", "docs/**", "skills/**", "examples/**", "Cargo.toml", "Cargo.lock", "LICENSE", "LICENSE.MIT", "AGENTS.md", "UPSTREAM.toml", "README.md"]
+include = ["/src/**", "/tests/*.rs", "/docs/**", "/skills/**", "/examples/**", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/LICENSE.MIT", "/AGENTS.md", "/UPSTREAM.toml", "/README.md"]
 
 [dependencies]
 command-group = "5.0.1"

@@ -1,9 +1,13 @@
 """Checks for release layout and publish-time path/overwrite safety."""
 
 import importlib.util
+import json
 import os
 from pathlib import Path
+import re
+import shutil
 import stat
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -140,6 +144,32 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "regular file"):
             package.create_archive(self.root, self.binary, package.TARGETS[0], "1.2.3", self.output)
         self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(shutil.which("cargo"), "Cargo required for source-package privacy check")
+    def test_cargo_package_excludes_private_files_with_public_resource_names(self):
+        # Exercise Cargo's actual glob rules, not a Python approximation of them.
+        match = re.search(r"^include\s*=\s*(\[.*\])$", (REPO / "Cargo.toml").read_text(), re.MULTILINE)
+        includes = json.loads(match.group(1))
+        (self.root / "src").mkdir()
+        (self.root / "src" / "lib.rs").write_text("")
+        (self.root / "Cargo.toml").write_text(
+            '[package]\nname="cpyref-package-privacy-check"\nversion="0.0.0"\nedition="2021"\n'
+            'license="MIT"\ninclude=' + json.dumps(includes) + '\n[workspace]\n')
+        forbidden = ["benchmarks/private/README.md", "private/AGENTS.md", "private/LICENSE",
+                     "private/UPSTREAM.toml", "stored/c0123456789ab.ref", "target/private.txt"]
+        for name in forbidden:
+            p = self.root / name
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("SYNTHETIC PRIVATE DATA")
+        result = subprocess.run(["cargo", "package", "--list", "--offline", "--allow-dirty"],
+                                cwd=self.root, capture_output=True, text=True, timeout=30,
+                                env={**os.environ, "CARGO_HOME": str(REPO / "target" / "cargo-home")})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        names = set(result.stdout.splitlines())
+        self.assertIn("README.md", names)
+        self.assertIn("docs/nested/usage.md", names)
+        self.assertIn("skills/cpyref/SKILL.md", names)
+        self.assertTrue(names.isdisjoint(forbidden), names.intersection(forbidden))
 
 
 if __name__ == "__main__":
