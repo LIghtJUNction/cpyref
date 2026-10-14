@@ -54,6 +54,10 @@ pub struct Artifact {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunRecord {
+    #[serde(default)]
+    pub stop_reason: Option<String>,
+    #[serde(default)]
+    pub redacted_env: Vec<String>,
     pub schema: u8,
     pub command: Vec<String>,
     pub cwd: PathBuf,
@@ -75,6 +79,7 @@ pub struct RunRecord {
 }
 
 pub struct RunOptions {
+    pub limits: crate::run_guard::Limits,
     pub command: Vec<String>,
     pub parser: String,
     pub snapshot: Option<String>,
@@ -359,6 +364,7 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
     if options.command.is_empty() {
         return Err(Error::invalid("run requires a command after --."));
     }
+    let protections = crate::run_guard::Prepared::new(&options.limits)?;
     let store = context.store()?;
     let parser = match options.parser.as_str() {
         "auto" => {
@@ -403,40 +409,14 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = command
-        .spawn()
-        .map_err(|e| Error::io("Start recorded command", e))?;
-    let mut out = child.stdout.take().expect("piped stdout");
-    let mut err = child.stderr.take().expect("piped stderr");
-    let out_thread = std::thread::spawn(move || {
-        let mut file = stdout;
-        let result = io::copy(&mut out, &mut file).and_then(|_| file.as_file().sync_all());
-        (file, result)
-    });
-    let err_thread = std::thread::spawn(move || {
-        let mut file = stderr;
-        let result = io::copy(&mut err, &mut file).and_then(|_| file.as_file().sync_all());
-        (file, result)
-    });
-    let waited = child.wait();
+    let captured = protections.capture(&mut command, stdout, stderr)?;
+    let mut stdout = captured.stdout;
+    let mut stderr = captured.stderr;
+    let status = captured.status;
+    let stop_reason = captured.stop_reason;
+    let logs_complete = captured.logs_complete;
     let duration_ms = timer.elapsed().as_millis().min(u64::MAX as u128) as u64;
     let finished_at = stamp();
-    if waited.is_err() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-    let (mut stdout, out_result) = out_thread
-        .join()
-        .map_err(|_| Error::new("RECORDING_FAILED", 5, "stdout capture thread panicked."))?;
-    let (mut stderr, err_result) = err_thread
-        .join()
-        .map_err(|_| Error::new("RECORDING_FAILED", 5, "stderr capture thread panicked."))?;
-    let status = match waited {
-        Ok(status) => status,
-        Err(error) => return Err(Error::io("Wait for recorded command", error).details(
-            json!({"stdout": preserve(stdout), "stderr": preserve(stderr), "logs_complete": false}),
-        )),
-    };
     let command_exit = status.code();
     #[cfg(unix)]
     let signal = {
@@ -445,18 +425,18 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
     };
     #[cfg(not(unix))]
     let signal: Option<i32> = None;
-    let wrapper_exit = command_exit
-        .unwrap_or_else(|| signal.map_or(1, |s| 128 + s))
-        .clamp(0, 255) as u8;
-    if let Err(error) = out_result.and(err_result) {
-        return Err(Error::new("RECORDING_FAILED", 5, format!("Command ended but log capture failed: {error}"))
-            .details(json!({"command_exit": command_exit, "signal": signal, "stdout": preserve(stdout), "stderr": preserve(stderr), "logs_complete": false})));
-    }
+    let wrapper_exit = match stop_reason.as_deref() {
+        Some("timeout") => 124,
+        Some("log_limit") => 125,
+        _ => command_exit
+            .unwrap_or_else(|| signal.map_or(1, |s| 128 + s))
+            .clamp(0, 255) as u8,
+    };
     // Every failure after execution preserves the full captured streams as local recovery material.
     let recorded = (|| -> Result<(Metadata, RunRecord)> {
         stdout.rewind().map_err(|e| Error::io("Rewind stdout", e))?;
         stderr.rewind().map_err(|e| Error::io("Rewind stderr", e))?;
-        let analysis = analyze(
+        let mut analysis = analyze(
             stdout.as_file_mut(),
             stderr.as_file_mut(),
             parser,
@@ -465,6 +445,10 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
             5,
             4096,
         )?;
+        if !logs_complete {
+            analysis.counts = None;
+            analysis.parse_status = "unknown".into();
+        }
         let source_after = if let Some(manifest) = &source_before {
             match snapshot::check(manifest) {
                 Ok(changes) => {
@@ -507,7 +491,9 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
         }
         let record = RunRecord {
             schema: 1,
-            command: options.command.clone(),
+            command: protections.command(&options.command),
+            stop_reason: stop_reason.clone(),
+            redacted_env: protections.redacted_env.clone(),
             cwd: context.cwd.clone(),
             started_at,
             finished_at: finished_at?,
@@ -525,7 +511,7 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
                 .metadata()
                 .map_err(|e| Error::io("Read stderr size", e))?
                 .len(),
-            logs_complete: true,
+            logs_complete,
             analysis,
             snapshot: options.snapshot.clone(),
             source_before,
@@ -579,7 +565,7 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
         )
         .details(
             json!({"command_exit": command_exit, "signal": signal, "cause": error,
-                "stdout": preserve(stdout), "stderr": preserve(stderr), "logs_complete": true}),
+                "stdout": preserve(stdout), "stderr": preserve(stderr), "logs_complete": logs_complete}),
         )),
     }
 }
@@ -595,6 +581,7 @@ pub fn summary(id: &str, record: &RunRecord) -> Value {
         "signal": record.signal, "wrapper_exit": record.wrapper_exit, "logs_complete": record.logs_complete,
         "stdout_bytes": record.stdout_bytes, "stderr_bytes": record.stderr_bytes, "duration_ms": record.duration_ms, "started_at": record.started_at, "finished_at": record.finished_at,
         "analysis": record.analysis, "snapshot": record.snapshot, "source_after": source_after,
+        "stop_reason": record.stop_reason, "redacted_env": record.redacted_env,
         "artifact_count": record.artifacts.len()})
 }
 
@@ -652,7 +639,12 @@ pub fn failed(run: &mut LoadedRun, offset: u64, limit: usize, budget: usize) -> 
         .seek(SeekFrom::Start(run.stderr_start))
         .map_err(|e| Error::io("Seek stderr", e))?;
     analyzer.scan((&mut run.file).take(run.record.stderr_bytes), "stderr")?;
-    Ok(analyzer.finish(&run.record.analysis.parser, run.record.command_exit))
+    let mut analysis = analyzer.finish(&run.record.analysis.parser, run.record.command_exit);
+    if !run.record.logs_complete {
+        analysis.counts = None;
+        analysis.parse_status = "unknown".into();
+    }
+    Ok(analysis)
 }
 
 pub fn stream_range(run: &LoadedRun, stream: &str) -> Result<(u64, u64)> {

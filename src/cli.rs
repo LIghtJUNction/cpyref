@@ -16,6 +16,10 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Insert saved bytes at one explicit target position. Writing requires a target hash.
+    Insert(Box<cpyref::edit::Args>),
+    /// Replace a unique target selection with saved bytes. Writing requires a target hash.
+    Replace(Box<cpyref::edit::Args>),
     /// Run a command, retain complete local logs, and print only a bounded JSON summary.
     Run(RunArgs),
     /// Inspect a saved run; expand logs only with an explicit stream or --failed.
@@ -222,6 +226,8 @@ impl CopyArgs {
 
 #[derive(Debug, Args)]
 pub struct RunArgs {
+    #[command(flatten)]
+    pub limits: cpyref::run_guard::Limits,
     #[arg(long, default_value = "auto", value_parser = ["auto", "cargo", "none"])]
     pub parser: String,
     /// Require the saved source manifest to match before starting the command.

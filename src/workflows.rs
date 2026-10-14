@@ -33,6 +33,7 @@ pub fn execute(command: Command, context: &Context) -> Result<u8> {
                 inputs: args.input,
                 artifacts: args.artifact,
                 inherit_stdin: args.inherit_stdin,
+                limits: args.limits,
             };
             let (report, exit) = runner::execute(context, options)?;
             print_json(&report)?;

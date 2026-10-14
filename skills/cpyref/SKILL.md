@@ -158,3 +158,22 @@ For advanced matching or limits, run `cpyref copy --help` or consult the
 [command reference](https://github.com/LIghtJUNction/cpyref/blob/main/docs/cli-reference.md).
 For configuration, moved projects or explicit shared spaces, consult
 [project spaces](https://github.com/LIghtJUNction/cpyref/blob/main/docs/project-spaces.md).
+
+## Safe edits and bounded runs (0.2.0 source)
+
+For an authorized local edit, use `insert` or `replace` with a complete bytes reference.
+First use `--dry-run`. Inspect the position and byte counts. Pass its `before_sha256`
+as `--expect-sha256` on the same operation. Never bypass TARGET_CHANGED or guess an
+occurrence to hide AMBIGUOUS. The tools do not add newlines or infer source-language syntax.
+
+`run` defaults to a 900-second command/pipe deadline and a combined 64 MiB stdout/stderr
+budget. Set `--timeout` and `--max-log-bytes` deliberately; zero disables that limit.
+Exit 124 means the deadline stopped capture; 125 means the byte budget stopped capture.
+Check stop_reason, logs_complete and command_exit separately. Do not retry commands
+with side effects merely because they stopped or their record could not be saved.
+
+`--redact-env NAME` removes the exact environment value from captured logs and stored
+argv before disk writes. It does not discover secrets, encrypt records or remove values
+from the child's environment. Encoded values, source paths and other child files are
+not protected. The resulting streams are redacted records, not byte-exact original logs.
+See docs/hardening.md for guarantees and limits.
