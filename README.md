@@ -8,14 +8,18 @@
 
 ## 安装
 
-需要 stable Rust 与 Cargo，首次构建需要访问 crates.io。从 GitHub 源码安装：
+通过 Cargo 安装：
 
 ```sh
-cargo install --git https://github.com/LIghtJUNction/cpyref
+cargo install cpyref --locked
 cpyref --help
 ```
 
-也可以克隆仓库后运行 `cargo install --path .`。
+Arch Linux 可从 [AUR](https://aur.archlinux.org/packages/cpyref) 安装：`yay -S cpyref`。
+
+不使用 Rust 时，可从 [GitHub Releases](https://github.com/LIghtJUNction/cpyref/releases/latest) 下载 Linux、Windows 或 macOS 的 x64/ARM64 安装包。Linux 提供 `.deb`、`.rpm`、`.pkg.tar.zst` 和通用压缩包；Windows 提供 ZIP，macOS 提供 tar.gz。具体安装方式见[安装与发布](docs/releases.md)。
+
+从 GitHub 源码安装可用 `cargo install --git https://github.com/LIghtJUNction/cpyref --locked`，克隆仓库后也可运行 `cargo install --path . --locked`。
 
 ## 基本用法
 
@@ -112,8 +116,8 @@ Agent 的调用顺序、失败处理和内容来源约定见 [Agent 调用约定
 
 ```sh
 cargo fmt --all -- --check
-cargo test --all-targets
-cargo clippy --all-targets -- -D warnings
+cargo test --locked --all-targets
+cargo clippy --locked --all-targets -- -D warnings
 ```
 
 ## 许可证

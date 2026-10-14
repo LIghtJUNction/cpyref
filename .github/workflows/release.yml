@@ -1,0 +1,303 @@
+name: Package and release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    name: Check release tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Require a version tag matching Cargo.toml
+        id: version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          import tomllib
+          from pathlib import Path
+
+          version = tomllib.loads(Path("Cargo.toml").read_text())["package"]["version"]
+          numeric = r"(?:0|[1-9][0-9]*)"
+          identifier = r"(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+          semver = rf"{numeric}\.{numeric}\.{numeric}(?:-{identifier}(?:\.{identifier})*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+          if not re.fullmatch(semver, version):
+              raise SystemExit(f"Invalid Cargo package version: {version!r}")
+          expected_ref = f"refs/tags/v{version}"
+          if os.environ["GITHUB_REF"] != expected_ref:
+              raise SystemExit(f"Release requires {expected_ref}; select that tag when running manually")
+          commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={version}\ncommit={commit}\n")
+          print(f"Building v{version} from {commit}")
+          PY
+
+  build:
+    name: Package ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            python: python3
+            suffix: ""
+            nfpm_arch: x86_64
+            nfpm_sha256: 6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            python: python3
+            suffix: ""
+            nfpm_arch: arm64
+            nfpm_sha256: a9a75213763783b7669719e505474c748c5ad7dc66591a195619deb50f85c2f4
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            python: python
+            suffix: .exe
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            python: python
+            suffix: .exe
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            python: python3
+            suffix: ""
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            python: python3
+            suffix: ""
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TARGET: ${{ matrix.target }}
+      PYTHON: ${{ matrix.python }}
+      BINARY_SUFFIX: ${{ matrix.suffix }}
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        env:
+          NFPM_VERSION: "2.48.0"
+          NFPM_ARCH: ${{ matrix.nfpm_arch }}
+          # From the official release's checksums.txt, pinned with the version.
+          NFPM_SHA256: ${{ matrix.nfpm_sha256 }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl-tools zstd
+          linker_var="CARGO_TARGET_$(echo "$TARGET" | tr '[:lower:]-' '[:upper:]_')_LINKER"
+          echo "$linker_var=musl-gcc" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/nfpm"
+          archive="$RUNNER_TEMP/nfpm/nfpm.tar.gz"
+          curl --fail --show-error --silent --location --retry 3 \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_${NFPM_ARCH}.tar.gz" \
+            --output "$archive"
+          printf '%s  %s\n' "$NFPM_SHA256" "$archive" | sha256sum --check --strict -
+          tar -xzf "$archive" -C "$RUNNER_TEMP/nfpm" nfpm
+          "$RUNNER_TEMP/nfpm/nfpm" --version
+      - name: Install stable Rust for the target
+        run: rustup toolchain install stable --profile minimal --target "$TARGET"
+      - name: Test on the native platform
+        run: cargo +stable test --locked --all-targets --target "$TARGET"
+      - name: Test packaging on the native platform
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          "$PYTHON" -m unittest discover -s tests -p 'test_*.py'
+      - name: Build release binary
+        run: cargo +stable build --locked --release --target "$TARGET"
+      - name: Require a fully static Linux binary
+        if: runner.os == 'Linux'
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+
+          binary = f"target/{os.environ['TARGET']}/release/cpyref"
+          for flag, marker in (("--program-headers", "INTERP"), ("--dynamic", "(NEEDED)")):
+              output = subprocess.check_output(["readelf", "--wide", flag, binary], text=True)
+              if marker in output:
+                  raise SystemExit("Linux packages require a static musl binary without shared-library dependencies")
+          PY
+      - name: Smoke test release binary
+        run: |
+          "target/$TARGET/release/cpyref$BINARY_SUFFIX" --version
+          "target/$TARGET/release/cpyref$BINARY_SUFFIX" --help
+      - name: Create portable archive
+        if: runner.os != 'Linux'
+        run: |
+          "$PYTHON" scripts/package.py --target "$TARGET" --version "$VERSION" \
+            --binary "target/$TARGET/release/cpyref$BINARY_SUFFIX" --out-dir dist
+      - name: Create Linux archive and distribution packages
+        if: runner.os == 'Linux'
+        run: |
+          "$PYTHON" scripts/package.py --target "$TARGET" --version "$VERSION" \
+            --binary "target/$TARGET/release/cpyref" --out-dir dist \
+            --linux-packages --nfpm "$RUNNER_TEMP/nfpm/nfpm"
+      - name: Retain packages for the release job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: packages-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish complete GitHub Release
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download all six platform packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: packages-*
+          merge-multiple: true
+          path: dist
+      - name: Validate, upload to a draft, and publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+          from urllib.parse import quote
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          version = os.environ["VERSION"]
+          tag = f"v{version}"
+          commit = os.environ["RELEASE_COMMIT"]
+          api_base = f"repos/{repo}"
+          dist = Path("dist")
+          targets = (
+              "x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl",
+              "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
+              "x86_64-apple-darwin", "aarch64-apple-darwin",
+          )
+          expected = set()
+          for target in targets:
+              extensions = ["zip" if "windows" in target else "tar.gz"]
+              if "linux" in target:
+                  extensions += ["deb", "rpm", "pkg.tar.zst"]
+              expected.update(f"cpyref-{version}-{target}.{ext}" for ext in extensions)
+          actual = {path.name for path in dist.iterdir()}
+          if actual != expected or any(path.is_symlink() or not path.is_file() or path.stat().st_size == 0 for path in dist.iterdir()):
+              raise SystemExit(f"Incomplete package set. Missing: {expected - actual}; unexpected: {actual - expected}")
+          digests = {name: hashlib.sha256((dist / name).read_bytes()).hexdigest() for name in sorted(expected)}
+          (dist / "SHA256SUMS").write_text("".join(f"{digest}  {name}\n" for name, digest in digests.items()))
+          expected.add("SHA256SUMS")
+          digests["SHA256SUMS"] = hashlib.sha256((dist / "SHA256SUMS").read_bytes()).hexdigest()
+
+          def gh(*args):
+              return subprocess.check_output(["gh", *args], text=True)
+
+          def api(path):
+              return json.loads(gh("api", path))
+
+          def check_tag():
+              obj = api(f"{api_base}/git/ref/tags/{quote(tag, safe='')}")["object"]
+              # Follow annotated tags to the exact commit that all jobs built.
+              for _ in range(10):
+                  if obj["type"] == "commit":
+                      if obj["sha"] != commit:
+                          raise SystemExit("The release tag moved after this build started")
+                      return
+                  if obj["type"] != "tag":
+                      break
+                  obj = api(f"{api_base}/git/tags/{obj['sha']}")["object"]
+              raise SystemExit("The release tag does not resolve to a commit")
+
+          check_tag()
+          pages = json.loads(gh("api", "--paginate", "--slurp", f"{api_base}/releases?per_page=100"))
+          matches = [release for page in pages for release in page if release["tag_name"] == tag]
+          if len(matches) > 1:
+              raise SystemExit("Multiple releases use this tag; inspect them before retrying")
+          if matches and not matches[0]["draft"]:
+              raise SystemExit(f"{tag} is already public; refusing to replace published assets")
+          if not matches:
+              args = ["release", "create", tag, "--repo", repo, "--verify-tag", "--draft", "--target", commit, "--title", tag, "--generate-notes"]
+              if "-" in version.split("+", 1)[0]:
+                  args.append("--prerelease")
+              gh(*args)
+          release_id = json.loads(gh("release", "view", tag, "--repo", repo, "--json", "databaseId"))["databaseId"]
+
+          def draft():
+              release = api(f"{api_base}/releases/{release_id}")
+              if not release["draft"] or release["tag_name"] != tag:
+                  raise SystemExit("The release is no longer the expected draft; refusing to alter it")
+              return release
+
+          release = draft()
+          extras = {asset["name"] for asset in release["assets"]} - expected
+          if extras:
+              raise SystemExit(f"Draft has unexpected assets; inspect before retrying: {extras}")
+          # A failed run can resume its draft. Only draft assets may be replaced.
+          gh("release", "upload", tag, "--repo", repo, "--clobber", *(str(dist / name) for name in sorted(expected)))
+          release = draft()
+          assets = release["assets"]
+          if len(assets) != len(expected) or {asset["name"] for asset in assets} != expected:
+              raise SystemExit("The uploaded draft is missing assets or contains duplicates")
+          for asset in assets:
+              name = asset["name"]
+              if asset["state"] != "uploaded" or asset["size"] != (dist / name).stat().st_size:
+                  raise SystemExit(f"Upload size/state check failed: {name}")
+              digest = asset.get("digest")
+              if digest is not None:
+                  if digest != f"sha256:{digests[name]}":
+                      raise SystemExit(f"Uploaded checksum does not match: {name}")
+              else:
+                  # Older API responses may omit digest; verify the stored bytes.
+                  process = subprocess.Popen(["gh", "api", f"{api_base}/releases/assets/{asset['id']}", "-H", "Accept: application/octet-stream"], stdout=subprocess.PIPE)
+                  checksum = hashlib.sha256()
+                  for chunk in iter(lambda: process.stdout.read(1024 * 1024), b""):
+                      checksum.update(chunk)
+                  if process.wait() != 0 or checksum.hexdigest() != digests[name]:
+                      raise SystemExit(f"Downloaded checksum does not match: {name}")
+          check_tag()
+          draft()
+          prerelease = "-" in version.split("+", 1)[0]
+          gh("release", "edit", tag, "--repo", repo, "--verify-tag", "--draft=false", f"--prerelease={str(prerelease).lower()}")
+          published = api(f"{api_base}/releases/{release_id}")
+          if published["draft"] or not published["published_at"]:
+              raise SystemExit("GitHub did not confirm publication")
+          print(f"Published {published['html_url']} with {len(expected)} verified assets")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(f"Published [{tag}]({published['html_url']}) with {len(expected)} verified assets.\n")
+          PY

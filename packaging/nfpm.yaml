@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://nfpm.goreleaser.com/schema.json
+name: cpyref
+arch: ${CPYREF_ARCH}
+platform: linux
+version: ${CPYREF_VERSION}
+version_schema: semver
+release: 1
+section: utils
+priority: optional
+maintainer: LIghtJUNction <lightjunction.me@gmail.com>
+description: Copy exact bytes once and paste them by a short reference, for AI agents
+homepage: https://github.com/LIghtJUNction/cpyref
+license: MIT
+umask: 0o022
+
+# The release workflow supplies static musl binaries. No libc or other shared
+# library dependency is needed. nFPM maps amd64/arm64 to each format's names.
+contents:
+  - src: ${CPYREF_BINARY}
+    dst: /usr/bin/cpyref
+    expand: true
+    file_info:
+      mode: 0755
+  - src: ${CPYREF_LICENSE}
+    dst: /usr/share/licenses/cpyref/LICENSE
+    expand: true
+    file_info:
+      mode: 0644
+  - src: ${CPYREF_LICENSE}
+    dst: /usr/share/doc/cpyref/copyright
+    packager: deb
+    expand: true
+    file_info:
+      mode: 0644
+  - src: ${CPYREF_README}
+    dst: /usr/share/doc/cpyref/README.md
+    expand: true
+    file_info:
+      mode: 0644
+  - src: ${CPYREF_DOCS}
+    dst: /usr/share/doc/cpyref/docs
+    type: tree
+    expand: true
+
+deb:
+  compression: xz
+rpm:
+  compression: gzip
+archlinux:
+  packager: LIghtJUNction <lightjunction.me@gmail.com>
