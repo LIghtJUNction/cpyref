@@ -169,6 +169,9 @@ impl Context {
         }
         let cwd = directory(cwd)?;
         let (project, project_source) = match &options.project {
+            Some(path) if path.as_os_str().is_empty() => {
+                return Err(Error::new("PROJECT_ERROR", 4, "Project directory must not be empty."));
+            }
             Some(path) => (directory(&cwd.join(path))?, "explicit"),
             None => discover(&cwd)?,
         };
@@ -224,10 +227,12 @@ impl Context {
             Some(path) => cwd.join(path),
             None => cwd.join(Store::default_root()?),
         };
+        // Prefix names so valid namespaces such as con/nul/com1 are safe on Windows too.
+        let directory_name = format!("ns-{namespace}");
         let store_path = match scope {
-            Scope::Project => base.join("projects").join(identity(scope, &project)).join(&namespace),
-            Scope::Directory => base.join("directories").join(identity(scope, &cwd)).join(&namespace),
-            Scope::Shared => base.join("shared").join(&namespace),
+            Scope::Project => base.join("projects").join(identity(scope, &project)).join(&directory_name),
+            Scope::Directory => base.join("directories").join(identity(scope, &cwd)).join(&directory_name),
+            Scope::Shared => base.join("shared").join(&directory_name),
             Scope::Global => base.clone(),
         };
         Ok(Self {
