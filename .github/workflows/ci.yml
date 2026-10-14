@@ -40,6 +40,9 @@ jobs:
         run: cargo build --locked
       - name: Test packaging, edits and run protections
         run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Measure exact-byte command scenarios
+        if: runner.os == 'Linux'
+        run: python scripts/benchmark.py --binary target/debug/cpyref --build-label debug --repeats 5
 
   msrv:
     name: Minimum Rust 1.89
