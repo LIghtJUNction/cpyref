@@ -1,0 +1,78 @@
+name: CopyPaste Benchmark
+on:
+  push:
+    branches: [bench/copy-paste-v1]
+    paths:
+      - 'benchmarks/copypaste/*.py'
+      - '.github/workflows/copypaste-benchmark.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: copypaste-benchmark-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: true
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
+      - name: Resolve and install latest main from Git before testing
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=https://github.com/LIghtJUNction/cpyref
+          SHA=$(git ls-remote "$URL" refs/heads/main | cut -f1)
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          OUT="$GITHUB_WORKSPACE/benchmarks/copypaste/results/$GITHUB_RUN_ID"
+          mkdir -p "$OUT"
+          git clone --no-checkout "$URL" "$RUNNER_TEMP/cpyref-source"
+          git -C "$RUNNER_TEMP/cpyref-source" checkout --detach "$SHA"
+          CMD="cargo install --git $URL --rev $SHA --locked --root $RUNNER_TEMP/cpyref-installed"
+          printf '%s\n' "$CMD" > "$OUT/install-command.txt"
+          cargo install --git "$URL" --rev "$SHA" --locked --root "$RUNNER_TEMP/cpyref-installed" 2>&1 | tee "$OUT/install.log"
+          cargo install --list --root "$RUNNER_TEMP/cpyref-installed" >> "$OUT/install.log"
+          "$RUNNER_TEMP/cpyref-installed/bin/cpyref" --version >> "$OUT/install.log"
+          "$RUNNER_TEMP/cpyref-installed/bin/cpyref" paste --help > "$OUT/paste-help.txt"
+          rustc -Vv > "$OUT/environment.txt"
+          cargo --version >> "$OUT/environment.txt"
+          python3 --version >> "$OUT/environment.txt"
+          uname -a >> "$OUT/environment.txt"
+          lscpu >> "$OUT/environment.txt"
+          printf 'BENCH_OUT=%s\nBENCH_SOURCE=%s\nBENCH_BINARY=%s\nBENCH_INSTALL_COMMAND=%s\nBENCH_RUN_URL=%s\n' \
+            "$OUT" "$RUNNER_TEMP/cpyref-source" "$RUNNER_TEMP/cpyref-installed/bin/cpyref" "$CMD" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >> "$GITHUB_ENV"
+      - name: Check baseline recipes and benchmark syntax
+        run: |
+          python3 -m py_compile benchmarks/copypaste/*.py
+          python3 benchmarks/copypaste/bench.py --source "$BENCH_SOURCE" --binary "$BENCH_BINARY" --out "$RUNNER_TEMP/baseline-check" --repeats 1 --baseline-only
+      - name: Run paired tool trials
+        run: |
+          python3 benchmarks/copypaste/bench.py --source "$BENCH_SOURCE" --binary "$BENCH_BINARY" --out "$BENCH_OUT" --repeats 20 --seed 20261014
+          cat "$BENCH_OUT/REPORT.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate tested Rust source independently
+        shell: bash
+        run: |
+          set +e
+          cd "$BENCH_SOURCE"
+          cargo fmt --all -- --check > "$BENCH_OUT/rust-fmt.log" 2>&1; FMT=$?
+          cargo test --locked --all-targets > "$BENCH_OUT/rust-test.log" 2>&1; TEST=$?
+          cargo clippy --locked --all-targets -- -D warnings > "$BENCH_OUT/rust-clippy.log" 2>&1; CLIPPY=$?
+          printf '{"fmt_exit":%s,"test_exit":%s,"clippy_exit":%s}\n' "$FMT" "$TEST" "$CLIPPY" | tee "$BENCH_OUT/rust-validation.json"
+      - name: Commit measured evidence to benchmark branch only
+        if: ${{ always() && github.ref == 'refs/heads/bench/copy-paste-v1' && env.BENCH_OUT != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$BENCH_OUT"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$BENCH_OUT"
+          if ! git diff --cached --quiet; then
+            git commit -m "bench: record measured CopyPaste Benchmark run $GITHUB_RUN_ID"
+            git push origin HEAD:refs/heads/bench/copy-paste-v1
+          fi
