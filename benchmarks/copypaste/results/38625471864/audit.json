@@ -1,0 +1,65 @@
+{
+  "audit": "passed",
+  "scope": "all recorded rows; arithmetic and recorded assertions; not a second execution",
+  "audited_commit": "35d10aeea752f138327b91ee142e76e446911a06",
+  "source_sha": "8d649a45e565387ee58150a13fc082864183aad1",
+  "raw_rows": 2260,
+  "unique_tasks": 35,
+  "repeats": 20,
+  "raw_bytes": 2753428,
+  "raw_sha256": "cef9da98592647d44f7016c30fcaa66cd0c707ab9c1fa7edbfd32fed7a42e776",
+  "totals": {
+    "cpyref": {
+      "passed": 700,
+      "trials": 700,
+      "unsupported": 0
+    },
+    "python_bytes": {
+      "passed": 700,
+      "trials": 700,
+      "unsupported": 0
+    },
+    "inline_base64": {
+      "passed": 640,
+      "trials": 640,
+      "unsupported": 60
+    },
+    "native_cp": {
+      "passed": 160,
+      "trials": 160,
+      "unsupported": 0
+    }
+  },
+  "outcomes": {
+    "inline_base64": {
+      "completed": 500,
+      "correct_rejections": 140,
+      "unsupported": 60
+    },
+    "cpyref": {
+      "completed": 500,
+      "correct_rejections": 200,
+      "unsupported": 0
+    },
+    "python_bytes": {
+      "completed": 500,
+      "correct_rejections": 200,
+      "unsupported": 0
+    },
+    "native_cp": {
+      "completed": 160,
+      "correct_rejections": 0,
+      "unsupported": 0
+    }
+  },
+  "rust_validation": {
+    "fmt_exit": 0,
+    "test_exit": 0,
+    "clippy_exit": 0
+  },
+  "audit_run_url": "https://github.com/LIghtJUNction/cpyref/actions/runs/38626748383",
+  "limitations": [
+    "Recorded output hashes and guards are checked; deleted temporary outputs cannot be independently re-read.",
+    "No live model evaluation or token/cost measurement."
+  ]
+}
