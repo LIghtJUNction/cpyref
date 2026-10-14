@@ -3,6 +3,7 @@ name = "cpyref"
 version = "0.1.0"
 edition = "2021"
 description = "Copy exact bytes once and paste them by a short reference, for AI agents"
+license = "MIT"
 repository = "https://github.com/LIghtJUNction/cpyref"
 readme = "README.md"
 publish = false
