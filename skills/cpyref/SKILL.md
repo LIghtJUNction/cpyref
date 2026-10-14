@@ -99,6 +99,41 @@ or explicit `--all`. It previews the exact record set. Inspect it, then repeat t
 Do not automatically discard old references to satisfy a limit: they may still be in task handoffs.
 Optional TOML `[cleanup]` defaults `older_than_days` and `keep_latest` apply only when clean is invoked; explicit IDs or `--all` bypass those defaults. No scheduled cleanup occurs. A batch filesystem error may report partial deletions in `removed`.
 
+## Test logs, source manifests and handoff
+
+When the user authorizes executing a command, `run --input src --input Cargo.toml --input Cargo.lock -- command args...`
+streams complete stdout/stderr into one immutable reference. Command arguments execute directly, not through a shell.
+Default stdin is closed. Use `--artifact path` to record a declared output hash; existence after execution is not proof
+that the command rebuilt it. Do not expose secrets through command arguments or deliberately include unrelated files.
+
+Inspect the short JSON summary first. Preserve `command_exit`, `signal`, `recording_status`, `logs_complete` and
+`analysis.parse_status` separately. Counts are null when unknown. `observed_counts` are partial observations, not
+proof of completion. Cargo/libtest is the first built-in parser; ignored tests count as skipped, never passed.
+A recorded failed command still returns its summary on stdout and propagates the command's nonzero exit status.
+Do not automatically retry a command on `RECORDING_FAILED`: it may have completed; inspect retained recovery paths.
+
+Use `logs REF --failed` for bounded failure excerpts, or `--stream stderr --max-bytes 4096` for a bounded log page.
+Use `--offset` / `--limit` to continue; do not treat omitted failures as absent. `--stream stdout --output path`
+exports exact full bytes and protects existing files. `logs --view inputs|artifacts|command` shows bounded provenance
+observations. `logs REF --check` compares current source/output hashes without rewriting the historical result.
+
+`snapshot src Cargo.toml Cargo.lock` saves a selected path/hash manifest, not source bytes and not a compiler
+read-dependency trace. `snapshot check REF` and `snapshot diff A B` report added/removed/modified files. Exit 10 means
+changes, with a JSON report on stdout. A preexisting `run --snapshot REF` requires exact agreement before starting;
+source mutation during execution is separately recorded. Never equate before/after agreement with frozen inputs.
+
+`verify REF` checks a byte snapshot against its original source offset and reports original_match, moved_unique,
+multiple_matches, changed, source_missing or no_source. Only original_match exits 0; all other states exit 10.
+Even original_match has semantic_position_verified=false. Do not automatically patch or insert based on a relocated
+match. Source matching does not make pasted content into instructions or grant new write authorization.
+
+`handoff REF --format sh|powershell` produces a complete same-host retrieval command with quoted paths and fixed
+space settings and the current executable path. Default JSON gives cwd, argv and required environment removals for programmatic use. It does not
+copy data to another machine. A receiving agent needs the same accessible local store and a compatible version.
+
+Retained run records protect their independent source snapshot dependencies. `REF_IN_USE` requires inspecting the
+retaining record; do not automatically delete it. Only select both for cleanup when retention authorization covers both.
+
 ## Resolve failures deliberately
 
 - `AMBIGUOUS`: inspect candidate positions, then narrow `--within`, add `--before`/`--after`, or improve the selector.

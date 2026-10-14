@@ -16,6 +16,44 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Run a command, retain complete local logs, and print only a bounded JSON summary.
+    Run(RunArgs),
+    /// Inspect a saved run; expand logs only with an explicit stream or --failed.
+    Logs {
+        id: String,
+        /// Select execution arguments, tested inputs or observed artifacts instead of the summary.
+        #[arg(long, default_value = "summary", value_parser = ["summary", "command", "inputs", "artifacts"], conflicts_with_all = ["failed", "stream"])]
+        view: String,
+        /// Show bounded failure positions/context; offset counts diagnostic locations, not tests.
+        #[arg(long, conflicts_with = "stream")]
+        failed: bool,
+        /// Compare this run's recorded source and artifact hashes with current files.
+        #[arg(long, conflicts_with_all = ["failed", "stream", "view"])]
+        check: bool,
+        #[arg(long, value_parser = ["stdout", "stderr"])]
+        stream: Option<String>,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=1000))]
+        limit: u32,
+        #[arg(long, default_value_t = 4096, value_parser = clap::value_parser!(u32).range(1..=65536))]
+        max_bytes: u32,
+        /// Export the complete stream as exact bytes, protecting existing output files.
+        #[arg(long, requires = "stream", conflicts_with = "failed")]
+        output: Option<PathBuf>,
+        #[arg(long, requires = "output")]
+        force: bool,
+    },
+    /// Capture selected source hashes, or check/compare/show an existing manifest.
+    Snapshot(SnapshotArgs),
+    /// Check whether copied bytes still match their original source position.
+    Verify { id: String },
+    /// Generate a complete same-host retrieval command or structured handoff.
+    Handoff {
+        id: String,
+        #[arg(long, default_value = "json", value_parser = ["json", "sh", "powershell"])]
+        format: String,
+    },
     /// Save a unique selection; print only its short reference by default.
     Copy(Box<CopyArgs>),
     /// Write the saved bytes, without adding a newline.
@@ -180,4 +218,61 @@ impl CopyArgs {
             dotall: self.dotall,
         }
     }
+}
+
+#[derive(Debug, Args)]
+pub struct RunArgs {
+    #[arg(long, default_value = "auto", value_parser = ["auto", "cargo", "none"])]
+    pub parser: String,
+    /// Require the saved source manifest to match before starting the command.
+    #[arg(long, conflicts_with = "input")]
+    pub snapshot: Option<String>,
+    /// Capture explicit source paths before the command; repeat for multiple paths.
+    #[arg(long)]
+    pub input: Vec<PathBuf>,
+    /// Hash a declared output after the command; does not prove it was rebuilt.
+    #[arg(long)]
+    pub artifact: Vec<PathBuf>,
+    /// Allow the child to read terminal input. Default stdin is closed.
+    #[arg(long)]
+    pub inherit_stdin: bool,
+    #[arg(last = true, required = true, num_args = 1..)]
+    pub command: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+#[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
+pub struct SnapshotArgs {
+    #[command(subcommand)]
+    pub command: Option<SnapshotCommand>,
+    pub paths: Vec<PathBuf>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SnapshotCommand {
+    /// Compare the selected source tree with a manifest; exit 10 if changed.
+    Check {
+        id: String,
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=1000))]
+        limit: u32,
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+    },
+    /// Compare two saved manifests without reading current source; exit 10 if changed.
+    Diff {
+        before: String,
+        after: String,
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=1000))]
+        limit: u32,
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+    },
+    /// Show a bounded page of saved source paths and hashes, never source bodies.
+    Show {
+        id: String,
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=1000))]
+        limit: u32,
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+    },
 }

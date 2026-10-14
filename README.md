@@ -90,6 +90,30 @@ cpyref clean --older-than 30 --keep-latest 20 --apply --confirm PREVIEW_TOKEN
 Linux 用户配置是 `~/.config/cpyref/config.toml`，项目配置是项目根 `.cpyref.toml`，用顶层 TOML 字段 `max_entries = 200` 设置当前空间保存上限（`0` 为不限）。达到上限拒绝新增，不自动删除旧引用。
 可选 `[cleanup]` 表配置 `older_than_days` 和 `keep_latest`，供主动运行 `clean` 时预览；不会自动清理。完整路径、字段、优先级见[配置规范](docs/project-spaces.md#保存上限与配置规范)，命令细节见[命令参考](docs/cli-reference.md#备注查找与复制预览)。
 
+## 测试日志与源码核对
+
+```sh
+# 流式保存完整日志，只返回测试摘要和引用
+cpyref run --input src --input tests --input Cargo.toml --input Cargo.lock \
+  --artifact target/debug/cpyref -- cargo test --locked --all-targets
+
+# 将 RUN_REF 换成上一步实际返回的 reference
+cpyref logs RUN_REF --failed
+cpyref logs RUN_REF --check
+cpyref logs RUN_REF --stream stderr --max-bytes 4096
+
+# 保存源码哈希清单；之后核对新增、修改、删除
+cpyref snapshot src tests Cargo.toml Cargo.lock
+cpyref snapshot check SOURCE_REF
+
+# 普通片段来源校验，以及一条命令交接
+cpyref verify REF
+cpyref handoff REF --format sh
+```
+
+本轮内置 Cargo/libtest 计数解析，其他命令仍保留完整日志，无法确认的计数为未知；跳过单列。源码快照是明确选中文件的哈希清单，不保存源码正文，也不声称追踪编译器实际依赖。关联的快照受依赖保护，清理不会留下缺少来源的测试记录。
+完整命令、退出码、长日志和恢复边界见[测试日志、源码清单与交接](docs/workflows.md)。这些功能在当前源码中提供，已发布的旧安装包可能尚未包含。
+
 ## 选择内容
 
 | 需求 | 参数示例 |

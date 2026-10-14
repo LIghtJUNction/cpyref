@@ -9,7 +9,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -18,9 +18,28 @@ use tempfile::NamedTempFile;
 const MAGIC: &[u8; 8] = b"CPYREF\x01\n";
 const MAX_HEADER: usize = 64 * 1024;
 
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordKind {
+    #[default]
+    Bytes,
+    Snapshot,
+    Run,
+}
+
+impl RecordKind {
+    fn is_bytes(&self) -> bool {
+        *self == Self::Bytes
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Metadata {
     pub version: u8,
+    #[serde(default, skip_serializing_if = "RecordKind::is_bytes")]
+    pub kind: RecordKind,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<String>,
     pub id: String,
     pub bytes: usize,
     pub sha256: String,
@@ -234,20 +253,34 @@ impl Store {
                 "Notes may contain at most 4096 UTF-8 bytes.",
             ));
         }
-        self.prepare()?;
-        let _lock = self.lock()?;
-        if max_entries != 0 {
-            let count = self.ids()?.len();
-            if count >= max_entries {
-                return Err(Error::new("ENTRY_LIMIT", 9, "This space has reached max_entries; preview cleanup or raise the configured limit.")
-                    .details(json!({"count": count, "max_entries": max_entries})));
-            }
-        }
-        let mut metadata = Metadata {
+        let metadata = Self::metadata(
+            data.len(),
+            digest(data),
+            source,
+            span,
+            note,
+            RecordKind::Bytes,
+            Vec::new(),
+        )?;
+        self.publish(&mut std::io::Cursor::new(data), metadata, max_entries)
+    }
+
+    fn metadata(
+        bytes: usize,
+        sha256: String,
+        source: String,
+        span: Span,
+        note: Option<String>,
+        kind: RecordKind,
+        dependencies: Vec<String>,
+    ) -> Result<Metadata> {
+        Ok(Metadata {
             version: 1,
+            kind,
+            dependencies,
             id: String::new(),
-            bytes: data.len(),
-            sha256: digest(data),
+            bytes,
+            sha256,
             created_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_err(|_| {
@@ -261,7 +294,95 @@ impl Store {
             source,
             span,
             note,
+        })
+    }
+
+    /// Stream typed records from a private staged file; run logs have no in-memory size ceiling.
+    pub fn put_record(
+        &self,
+        file: &mut File,
+        kind: RecordKind,
+        dependencies: Vec<String>,
+        max_entries: usize,
+    ) -> Result<Metadata> {
+        if kind == RecordKind::Bytes {
+            return Err(Error::invalid("Use copy for byte snapshots."));
+        }
+        let bytes = usize::try_from(
+            file.metadata()
+                .map_err(|e| Error::io("Read staged size", e))?
+                .len(),
+        )
+        .map_err(|_| {
+            Error::new(
+                "SIZE_LIMIT",
+                9,
+                "Record cannot be represented on this platform.",
+            )
+        })?;
+        if bytes == 0 || (kind != RecordKind::Run && bytes > MAX_BYTES) {
+            return Err(Error::new("SIZE_LIMIT", 9, "Invalid typed record size."));
+        }
+        file.rewind()
+            .map_err(|e| Error::io("Rewind staged record", e))?;
+        let sha256 = hash_reader(file)?;
+        let selector = match kind {
+            RecordKind::Run => "run",
+            _ => "snapshot",
         };
+        let span = Span {
+            byte_start: 0,
+            byte_end: bytes,
+            line_start: 1,
+            line_end: 1,
+            selector: selector.into(),
+        };
+        let metadata = Self::metadata(
+            bytes,
+            sha256,
+            format!("<{selector}>"),
+            span,
+            None,
+            kind,
+            dependencies,
+        )?;
+        self.publish(file, metadata, max_entries)
+    }
+
+    pub fn staging_file(&self) -> Result<NamedTempFile> {
+        self.prepare()?;
+        NamedTempFile::new_in(&self.root).map_err(|e| Error::io("Create staged record", e))
+    }
+
+    pub fn check_capacity(&self, max_entries: usize) -> Result<()> {
+        self.prepare()?;
+        let _lock = self.lock()?;
+        self.capacity(max_entries)
+    }
+
+    fn capacity(&self, max_entries: usize) -> Result<()> {
+        if max_entries != 0 {
+            let count = self.ids()?.len();
+            if count >= max_entries {
+                return Err(Error::new("ENTRY_LIMIT", 9, "This space has reached max_entries; preview cleanup or raise the configured limit.")
+                    .details(json!({"count": count, "max_entries": max_entries})));
+            }
+        }
+        Ok(())
+    }
+
+    fn publish(
+        &self,
+        reader: &mut (impl Read + Seek),
+        mut metadata: Metadata,
+        max_entries: usize,
+    ) -> Result<Metadata> {
+        self.prepare()?;
+        let _lock = self.lock()?;
+        self.capacity(max_entries)?;
+        for dependency in &metadata.dependencies {
+            self.info(dependency)?;
+        }
         for _ in 0..32 {
             let mut random = [0_u8; 6];
             rand::rngs::OsRng.try_fill_bytes(&mut random).map_err(|e| {
@@ -288,9 +409,26 @@ impl Store {
             temp.write_all(MAGIC)
                 .and_then(|_| temp.write_all(&(header.len() as u32).to_le_bytes()))
                 .and_then(|_| temp.write_all(&header))
-                .and_then(|_| temp.write_all(data))
+                .and_then(|_| reader.rewind())
+                .and_then(|_| std::io::copy(reader, &mut temp).map(|_| ()))
                 .and_then(|_| temp.as_file().sync_all())
                 .map_err(|e| Error::io("Write snapshot", e))?;
+            let actual_len = temp
+                .as_file()
+                .metadata()
+                .map_err(|e| Error::io("Read staged length", e))?
+                .len();
+            temp.seek(SeekFrom::Start(12 + header.len() as u64))
+                .map_err(|e| Error::io("Seek staged payload", e))?;
+            if actual_len != 12 + header.len() as u64 + metadata.bytes as u64
+                || hash_reader(temp.as_file_mut())? != metadata.sha256
+            {
+                return Err(Error::new(
+                    "SOURCE_CHANGED",
+                    4,
+                    "Staged bytes changed before publication; no reference was published.",
+                ));
+            }
             let destination = self.root.join(format!("{}.ref", metadata.id));
             match temp.persist_noclobber(destination) {
                 Ok(_) => return Ok(metadata),
@@ -344,10 +482,11 @@ impl Store {
         if metadata.version != 1
             || metadata.id != id
             || metadata.bytes == 0
-            || metadata.bytes > MAX_BYTES
+            || (metadata.kind != RecordKind::Run && metadata.bytes > MAX_BYTES)
+            || metadata.dependencies.iter().any(|id| !valid_id(id))
             || metadata.span.byte_end.checked_sub(metadata.span.byte_start) != Some(metadata.bytes)
             || metadata.sha256.len() != 64
-            || file_length != 12 + header_length as u64 + metadata.bytes as u64
+            || (12 + header_length as u64).checked_add(metadata.bytes as u64) != Some(file_length)
         {
             return Err(corrupt(
                 "Snapshot metadata or payload length is inconsistent.",
@@ -364,6 +503,13 @@ impl Store {
     /// Verify the complete payload before making any of its bytes available to the caller.
     pub fn get(&self, id: &str) -> Result<(Metadata, Vec<u8>)> {
         let (file, metadata) = self.open(id)?;
+        if metadata.bytes > MAX_BYTES {
+            return Err(Error::new(
+                "SIZE_LIMIT",
+                9,
+                "Use bounded logs or a streaming export for this record.",
+            ));
+        }
         let mut data = Vec::with_capacity(metadata.bytes);
         file.take(metadata.bytes as u64 + 1)
             .read_to_end(&mut data)
@@ -374,6 +520,53 @@ impl Store {
             ));
         }
         Ok((metadata, data))
+    }
+
+    /// Verify a full payload before exposing a seekable stream, using bounded memory.
+    pub fn verified_file(&self, id: &str) -> Result<(File, Metadata)> {
+        let (mut file, metadata) = self.open(id)?;
+        let offset = file
+            .stream_position()
+            .map_err(|e| Error::io("Read payload offset", e))?;
+        if hash_reader(&mut file)? != metadata.sha256 {
+            return Err(corrupt("Snapshot payload does not match SHA-256."));
+        }
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|e| Error::io("Rewind payload", e))?;
+        Ok((file, metadata))
+    }
+
+    /// No retained record may lose a dependency; callers can remove dependents in the same batch.
+    pub fn check_removal(&self, selected: &[Metadata]) -> Result<()> {
+        self.check_removal_ids(&selected.iter().map(|m| m.id.as_str()).collect::<Vec<_>>())
+    }
+
+    fn check_removal_ids(&self, selected: &[&str]) -> Result<()> {
+        for id in self.ids()? {
+            if selected.contains(&id.as_str()) {
+                continue;
+            }
+            let m = match self.info(&id) {
+                Ok(m) => m,
+                // An unreadable header has no usable dependency declaration. Exact remove
+                // must still permit recovery when more than one record is damaged.
+                Err(error) if error.code == "CORRUPT_REF" => continue,
+                Err(error) => return Err(error),
+            };
+            if let Some(dependency) = m
+                .dependencies
+                .iter()
+                .find(|d| selected.contains(&d.as_str()))
+            {
+                return Err(Error::new(
+                    "REF_IN_USE",
+                    4,
+                    "A retained record depends on a selected reference.",
+                )
+                .details(json!({"reference": dependency, "used_by": id})));
+            }
+        }
+        Ok(())
     }
 
     fn ids(&self) -> Result<Vec<String>> {
@@ -425,6 +618,7 @@ impl Store {
             return Ok(());
         }
         let _lock = self.lock()?;
+        self.check_removal(expected)?;
         for metadata in expected {
             let current = self.info(&metadata.id)?;
             if serde_json::to_vec(&current).ok() != serde_json::to_vec(metadata).ok() {
@@ -435,8 +629,20 @@ impl Store {
                 ));
             }
         }
+        let mut pending = expected.iter().collect::<Vec<_>>();
+        let mut ordered = Vec::new();
+        while !pending.is_empty() {
+            let Some(index) = pending.iter().position(|m| {
+                !pending
+                    .iter()
+                    .any(|other| other.dependencies.contains(&m.id))
+            }) else {
+                return Err(corrupt("Reference dependency cycle."));
+            };
+            ordered.push(pending.remove(index));
+        }
         let mut removed = Vec::new();
-        for metadata in expected {
+        for metadata in ordered {
             self.remove_unlocked(&metadata.id).map_err(|error| {
                 error.details(json!({"removed": removed, "failed": metadata.id}))
             })?;
@@ -448,6 +654,7 @@ impl Store {
     pub fn remove(&self, id: &str) -> Result<()> {
         self.path(id)?;
         let _lock = self.lock()?;
+        self.check_removal_ids(&[id])?;
         self.remove_unlocked(id)
     }
 
@@ -464,8 +671,27 @@ impl Store {
     }
 }
 
+pub fn hash_reader(reader: &mut impl Read) -> Result<String> {
+    let mut hash = Sha256::new();
+    let mut buffer = [0_u8; 65536];
+    loop {
+        let n = reader
+            .read(&mut buffer)
+            .map_err(|e| Error::io("Hash bytes", e))?;
+        if n == 0 {
+            break;
+        }
+        hash.update(&buffer[..n]);
+    }
+    Ok(format!("{:x}", hash.finalize()))
+}
+
 /// Write through a temporary file in the destination directory, never truncate in place.
 pub fn write_output(path: &Path, data: &[u8], force: bool) -> Result<()> {
+    write_stream_output(path, &mut std::io::Cursor::new(data), force)
+}
+
+pub fn write_stream_output(path: &Path, reader: &mut impl Read, force: bool) -> Result<()> {
     if let Ok(metadata) = fs::symlink_metadata(path) {
         if metadata.file_type().is_symlink() || !metadata.is_file() {
             return Err(Error::new(
@@ -487,7 +713,7 @@ pub fn write_output(path: &Path, data: &[u8], force: bool) -> Result<()> {
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     let mut temp = NamedTempFile::new_in(parent).map_err(|e| Error::io("Create output file", e))?;
-    temp.write_all(data)
+    std::io::copy(reader, &mut temp)
         .and_then(|_| temp.as_file().sync_all())
         .map_err(|e| Error::io("Write output", e))?;
     let result = if force {

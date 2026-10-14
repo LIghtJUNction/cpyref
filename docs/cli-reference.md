@@ -157,3 +157,11 @@ cpyref clean --note '临时' --apply --confirm PREVIEW_TOKEN
 执行时先在写锁内重新检查全部候选元数据，再逐条删除；文件系统错误可能导致部分成功，错误详情会列出 `removed` 与 `failed`。不删除预览后新增的引用，不清理未知文件或遗留临时文件。元数据损坏时批量清理拒绝继续，可核对后用 `remove REF` 精确删除该记录。
 
 保存条数通过 `max_entries`、`CPYREF_MAX_ENTRIES` 或 `--max-entries` 配置，见[配置规范](project-spaces.md#保存上限与配置规范)。超过上限返回 `ENTRY_LIMIT`（退出码 9）；不会自动删除任何引用。正常写入和删除使用每空间 `.write.lock` 文件协调，进程退出会释放操作系统锁；不要手工删锁文件。使用旧版本或直接操作存储的程序不受新版本条数上限约束。
+
+
+## 测试记录、源码清单、来源核对与交接
+
+`run`、`logs`、`snapshot`、`verify`、`handoff` 的参数、返回协议和边界见[工作流参考](workflows.md)。
+`run` 正常保存后使用子命令的退出状态，失败命令仍在 stdout 返回已保存的测试摘要；执行器或记录错误仍使用 stderr JSON。
+`verify`、`snapshot check/diff`、`logs --check` 的“不匹配/无法确认”返回退出码 10 并输出状态 JSON，这与 copy 的失败协议分开。
+新错误包括 `WRONG_KIND`、`PATH_ENCODING`、`UNSAFE_SOURCE`、`SOURCE_CHANGED`、`REF_IN_USE`（退出码 4）、`RECORDING_FAILED`（退出码 5）和 `SNAPSHOT_CHANGED`（退出码 10）。

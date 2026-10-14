@@ -1,4 +1,5 @@
 mod cli;
+mod workflows;
 
 use clap::{error::ErrorKind, Parser};
 use cli::{Cli, Command};
@@ -133,6 +134,13 @@ fn execute(command: Command, context: &Context) -> Result<()> {
             }
         }
         Command::Paste { id, output, force } => {
+            if store.info(&id)?.kind == cpyref::store::RecordKind::Run {
+                return Err(Error::new(
+                    "WRONG_KIND",
+                    4,
+                    "Use logs REF --stream stdout/stderr to retrieve a run's logs.",
+                ));
+            }
             let (_, data) = store.get(&id)?;
             if let Some(path) = output {
                 write_output(&path, &data, force)
@@ -280,6 +288,7 @@ fn execute(command: Command, context: &Context) -> Result<()> {
                 })
                 .map(|(_, m)| m)
                 .collect();
+            store.check_removal(&selected)?;
             // Bind the preview to this exact space and record set, not merely a count or an age rule.
             let encoded =
                 serde_json::to_vec(&(context.store_path.as_os_str().as_encoded_bytes(), &selected))
@@ -299,12 +308,25 @@ fn execute(command: Command, context: &Context) -> Result<()> {
                 "payload_bytes": selected.iter().map(|m| m.bytes as u64).sum::<u64>(),
                 "references": selected, "confirm": token, "context": context.report()}))
         }
+        _ => Err(Error::new(
+            "INTERNAL_ERROR",
+            5,
+            "Workflow command reached legacy dispatcher.",
+        )),
     }
 }
 
-fn run(cli: Cli) -> Result<()> {
+fn run(cli: Cli) -> Result<u8> {
     let context = Context::resolve(&cli.context)?;
-    execute(cli.command, &context).map_err(|error| context.annotate(error))
+    let result = match cli.command {
+        command @ (Command::Run(_)
+        | Command::Logs { .. }
+        | Command::Snapshot(_)
+        | Command::Verify { .. }
+        | Command::Handoff { .. }) => workflows::execute(command, &context),
+        command => execute(command, &context).map(|_| 0),
+    };
+    result.map_err(|error| context.annotate(error))
 }
 
 fn report(error: Error) -> ExitCode {
@@ -335,7 +357,7 @@ fn main() -> ExitCode {
         Err(error) => return report(Error::invalid(error.to_string())),
     };
     match run(cli) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(exit) => ExitCode::from(exit),
         Err(error) => report(error),
     }
 }
