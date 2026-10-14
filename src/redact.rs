@@ -13,7 +13,9 @@ impl Prepared {
         names.sort();
         names.dedup();
         if names.len() > 32 {
-            return Err(Error::invalid("At most 32 --redact-env names may be supplied."));
+            return Err(Error::invalid(
+                "At most 32 --redact-env names may be supplied.",
+            ));
         }
         let mut patterns = Vec::new();
         for name in &names {
@@ -21,17 +23,34 @@ impl Prepared {
                 && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
                 && !name.as_bytes()[0].is_ascii_digit();
             if !valid {
-                return Err(Error::new("REDACTION_CONFIG", 4, "Redaction requires an environment variable name, not a secret value."));
+                return Err(Error::new(
+                    "REDACTION_CONFIG",
+                    4,
+                    "Redaction requires an environment variable name, not a secret value.",
+                ));
             }
-            let value = std::env::var(name).map_err(|_| Error::new("REDACTION_CONFIG", 4, "A selected redaction variable is missing or is not UTF-8."))?;
+            let value = std::env::var(name).map_err(|_| {
+                Error::new(
+                    "REDACTION_CONFIG",
+                    4,
+                    "A selected redaction variable is missing or is not UTF-8.",
+                )
+            })?;
             if value.is_empty() || value.len() > 4096 {
-                return Err(Error::new("REDACTION_CONFIG", 4, "Each redaction value must contain 1 to 4096 UTF-8 bytes."));
+                return Err(Error::new(
+                    "REDACTION_CONFIG",
+                    4,
+                    "Each redaction value must contain 1 to 4096 UTF-8 bytes.",
+                ));
             }
             patterns.push(value.into_bytes());
         }
         patterns.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
         patterns.dedup();
-        Ok(Self { names, patterns: Arc::new(patterns) })
+        Ok(Self {
+            names,
+            patterns: Arc::new(patterns),
+        })
     }
 
     pub fn stream(&self) -> Redactor {
@@ -39,7 +58,11 @@ impl Prepared {
     }
 
     pub fn command(&self, argv: &[String]) -> Vec<String> {
-        argv.iter().map(|arg| String::from_utf8_lossy(&self.stream().feed(arg.as_bytes(), true)).into_owned()).collect()
+        argv.iter()
+            .map(|arg| {
+                String::from_utf8_lossy(&self.stream().feed(arg.as_bytes(), true)).into_owned()
+            })
+            .collect()
     }
 }
 
@@ -51,7 +74,11 @@ pub struct Redactor {
 impl Redactor {
     fn new(patterns: Arc<Vec<Vec<u8>>>) -> Self {
         let longest = patterns.iter().map(Vec::len).max().unwrap_or(1);
-        Self { patterns, pending: Vec::new(), longest }
+        Self {
+            patterns,
+            pending: Vec::new(),
+            longest,
+        }
     }
 
     /// Keep enough original suffix to detect values split over reads. On truncation,
@@ -61,11 +88,19 @@ impl Redactor {
             return bytes.to_vec();
         }
         self.pending.extend_from_slice(bytes);
-        let safe = if eof { self.pending.len() } else { self.pending.len().saturating_sub(self.longest - 1) };
+        let safe = if eof {
+            self.pending.len()
+        } else {
+            self.pending.len().saturating_sub(self.longest - 1)
+        };
         let mut cursor = 0;
         let mut output = Vec::new();
         while cursor < safe {
-            if let Some(pattern) = self.patterns.iter().find(|pattern| self.pending[cursor..].starts_with(pattern)) {
+            if let Some(pattern) = self
+                .patterns
+                .iter()
+                .find(|pattern| self.pending[cursor..].starts_with(pattern))
+            {
                 output.extend_from_slice(b"[REDACTED]");
                 cursor += pattern.len();
             } else {

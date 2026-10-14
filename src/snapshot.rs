@@ -249,6 +249,37 @@ fn selected_path(path: &Path) -> Result<PathBuf> {
     fs::canonicalize(path).map_err(|e| Error::io("Resolve selected source", e))
 }
 
+// Resolve the storage location even before it exists, including OS path aliases
+// such as macOS /var -> /private/var. Keep this exclusion fixed in the manifest.
+fn storage_location(path: &Path) -> Result<PathBuf> {
+    let mut ancestor = path;
+    let mut missing = Vec::new();
+    loop {
+        match fs::canonicalize(ancestor) {
+            Ok(mut resolved) => {
+                for name in missing.into_iter().rev() {
+                    resolved.push(name);
+                }
+                return Ok(resolved);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing.push(
+                    ancestor
+                        .file_name()
+                        .ok_or_else(|| {
+                            Error::invalid("Cannot resolve the configured storage path.")
+                        })?
+                        .to_os_string(),
+                );
+                ancestor = ancestor
+                    .parent()
+                    .ok_or_else(|| Error::invalid("Cannot resolve the configured storage path."))?;
+            }
+            Err(error) => return Err(Error::io("Resolve storage exclusion", error)),
+        }
+    }
+}
+
 pub fn capture(context: &Context, paths: &[PathBuf]) -> Result<Manifest> {
     if paths.is_empty() {
         return Err(Error::invalid("Select at least one source path."));
@@ -265,7 +296,7 @@ pub fn capture(context: &Context, paths: &[PathBuf]) -> Result<Manifest> {
         excluded: Vec::new(),
         files: BTreeMap::new(),
     };
-    if let Ok(store) = normalize(&context.store_base).strip_prefix(&manifest.root) {
+    if let Ok(store) = storage_location(&context.store_base)?.strip_prefix(&manifest.root) {
         let path = native_text(store)?;
         if !path.is_empty() {
             manifest.excluded.push(path);

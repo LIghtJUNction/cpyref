@@ -204,6 +204,58 @@ fn execute(command: Command, context: &Context) -> Result<()> {
                 Ok(())
             }
         }
+        Command::Search {
+            query,
+            metadata_only,
+            ignore_case,
+            kind,
+            filter,
+            limit,
+            offset,
+            json: as_json,
+        } => {
+            let matcher = cpyref::search::Matcher::new(&query, ignore_case)?;
+            let entries = store
+                .list()?
+                .into_iter()
+                .filter(|m| matches_filter(m, &filter) && kind.is_none_or(|k| m.kind == k));
+            let hits = cpyref::search::search(&store, entries, &matcher, metadata_only)?;
+            let total = hits.len();
+            let shown: Vec<_> = hits.into_iter().skip(offset).take(limit as usize).collect();
+            if as_json {
+                print_json(
+                    &json!({"references": shown, "total": total, "offset": offset, "limit": limit,
+                    "metadata_only": metadata_only, "payload_kinds": ["bytes"], "context": context.report()}),
+                )
+            } else {
+                let mut out = io::stdout().lock();
+                writeln!(
+                    out,
+                    "REF\tKIND\tSOURCE\tLINES\tBYTE_RANGE\tBYTES\tCREATED_UNIX\tNOTE\tMATCHED"
+                )
+                .map_err(|e| Error::io("Write search results", e))?;
+                for hit in shown {
+                    let m = hit.metadata;
+                    writeln!(
+                        out,
+                        "{}\t{}\t{}\t{}:{}\t{}:{}\t{}\t{}\t{}\t{}",
+                        m.id,
+                        cpyref::search::kind_name(m.kind),
+                        json!(m.source),
+                        m.span.line_start,
+                        m.span.line_end,
+                        m.span.byte_start,
+                        m.span.byte_end,
+                        m.bytes,
+                        m.created_at,
+                        json!(m.note.unwrap_or_default()),
+                        hit.matched_in.join(",")
+                    )
+                    .map_err(|e| Error::io("Write search results", e))?;
+                }
+                Ok(())
+            }
+        }
         Command::Stats => {
             let entries = store.list()?;
             let now = now()?;

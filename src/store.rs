@@ -18,7 +18,7 @@ use tempfile::NamedTempFile;
 const MAGIC: &[u8; 8] = b"CPYREF\x01\n";
 const MAX_HEADER: usize = 64 * 1024;
 
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum RecordKind {
     #[default]
@@ -354,6 +354,11 @@ impl Store {
         self.publish(file, metadata, max_entries)
     }
 
+    pub fn available_space(&self) -> Result<u64> {
+        self.prepare()?;
+        fs2::available_space(&self.root).map_err(|e| Error::io("Check store free space", e))
+    }
+
     pub fn staging_file(&self) -> Result<NamedTempFile> {
         self.prepare()?;
         NamedTempFile::new_in(&self.root).map_err(|e| Error::io("Create staged record", e))
@@ -525,6 +530,48 @@ impl Store {
             ));
         }
         Ok((metadata, data))
+    }
+
+    /// Search and hash the entire saved payload in one pass, using a bounded overlap window.
+    pub fn contains_payload(
+        &self,
+        id: &str,
+        matcher: &regex::bytes::Regex,
+        overlap: usize,
+    ) -> Result<bool> {
+        let (mut file, metadata) = self.open(id)?;
+        let mut digest = Sha256::new();
+        let mut buffer = [0_u8; 65536];
+        let mut tail = Vec::new();
+        let mut window = Vec::new();
+        let mut found = false;
+        let mut bytes = 0_u64;
+        loop {
+            let n = file
+                .read(&mut buffer)
+                .map_err(|e| Error::io("Search saved payload", e))?;
+            if n == 0 {
+                break;
+            }
+            digest.update(&buffer[..n]);
+            bytes += n as u64;
+            if !found {
+                window.clear();
+                window.extend_from_slice(&tail);
+                window.extend_from_slice(&buffer[..n]);
+                found = matcher.is_match(&window);
+                let keep = window.len().min(overlap);
+                tail.clear();
+                tail.extend_from_slice(&window[window.len() - keep..]);
+            }
+        }
+        if bytes != metadata.bytes as u64 || format!("{:x}", digest.finalize()) != metadata.sha256 {
+            return Err(
+                corrupt("Saved payload failed integrity verification during search.")
+                    .details(json!({"id": id})),
+            );
+        }
+        Ok(found)
     }
 
     /// Verify a full payload before exposing a seekable stream, using bounded memory.

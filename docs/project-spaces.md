@@ -166,6 +166,9 @@ cpyref --no-config --scope global --namespace default paste c0123456789ab --outp
 | `store` | 路径字符串 / 系统本地数据目录下 `cpyref` | 只能放在用户配置或显式 `--config` 文件中；相对路径以配置文件所在目录为基准 |
 | `max_entries` | 非负整数 / `0` | 每个选定空间的最大保存条数；`0` 表示不限，正整数为上限 |
 | `[cleanup].older_than_days` | 非负整数 / 未设置 | 主动运行 clean 时的默认年龄筛选；最大 4294967295 |
+| `[run].max_log_bytes` | 正整数 / `67108864` | stdout/stderr 合计日志字节上限，最大 `1073741824` |
+| `[run].timeout_seconds` | 正整数 / `600` | 执行和管道捕获超时秒数，最大 `86400` |
+| `[run].min_free_bytes` | 非负整数 / `536870912` | 空闲空间保留量，启动还需三倍日志上限及描述信息空间 |
 | `[cleanup].keep_latest` | 非负整数 / 未设置 | 主动运行 clean 时保护最新的 N 条 |
 
 配置文件位置：
@@ -222,7 +225,7 @@ cpyref --config /work/app/settings.toml copy src/example.py
 这会将存储基目录解析为 `/work/app/.local/cpyref`，仍在其下按项目身份和 namespace 隔离。配置不展开 `~`、`$HOME` 或 `${变量}`，使用真实绝对路径或相对于配置文件的路径。
 
 优先级按字段合并：**CLI > 环境变量 > 自动项目配置 > 用户配置 > 默认值**。`max_entries` 对应 `--max-entries` / `CPYREF_MAX_ENTRIES`。
-显式 `--config` 替代全部自动配置；`--no-config` 跳过文件配置，但不跳过环境变量和项目标记发现。自动项目配置的 namespace、max_entries 和 cleanup 默认规则都不参与 shared/global 空间选择，防止仓库控制共享空间设置。
+显式 `--config` 替代全部自动配置；`--no-config` 跳过文件配置，但不跳过环境变量和项目标记发现。自动项目配置的 namespace、max_entries、run 和 cleanup 默认规则都不参与 shared/global 空间选择，防止仓库控制共享空间设置。
 
 条数按当前空间中合法 `ID.ref` 名称计数，损坏记录仍占名额。每次 copy 在同一写锁内检查上限并发布快照，多个新版进程并发写入不会绕过该检查。达到上限返回 `ENTRY_LIMIT`，不生成新引用、不淘汰旧引用。降低上限不会删除已存记录；需先显式清理或调整上限。
 

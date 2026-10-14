@@ -134,7 +134,7 @@ class HardeningTests(unittest.TestCase):
                            "-c", "import sys; sys.stdout.buffer.write(b'x'*128)")
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(result.stdout)
-        self.assertIsNone(report["stop_reason"])
+        self.assertIsNone(report["termination_reason"])
         self.assertTrue(report["logs_complete"])
         self.assertEqual(report["stdout_bytes"], 128)
         result = self.call("run", "--", sys.executable, "-c", "raise SystemExit(7)")
@@ -148,18 +148,18 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual(result.returncode, 124, result.stderr)
         self.assertLess(time.monotonic() - start, 8)
         report = json.loads(result.stdout)
-        self.assertEqual(report["stop_reason"], "timeout")
+        self.assertEqual(report["termination_reason"], "timeout")
         self.assertFalse(report["logs_complete"])
         self.assertIsNone(report["analysis"]["counts"])
         saved = self.good("logs", report["reference"])
-        self.assertEqual(saved["stop_reason"], "timeout")
+        self.assertEqual(saved["termination_reason"], "timeout")
 
     def test_descendant_holding_pipes_is_terminated(self):
         child = "import time,pathlib; time.sleep(3); pathlib.Path('descendant-survived').write_text('bad')"
         parent = "import subprocess,sys; subprocess.Popen([sys.executable, '-c', " + repr(child) + "])"
         result = self.call("run", "--timeout", 1, "--", sys.executable, "-c", parent)
         self.assertEqual(result.returncode, 124, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["stop_reason"], "timeout")
+        self.assertEqual(json.loads(result.stdout)["termination_reason"], "timeout")
         time.sleep(2.3)
         self.assertFalse((self.root / "descendant-survived").exists())
 
@@ -168,7 +168,7 @@ class HardeningTests(unittest.TestCase):
         result = self.call("run", "--max-log-bytes", 1024, "--", sys.executable, "-c", program)
         self.assertEqual(result.returncode, 125, result.stderr)
         report = json.loads(result.stdout)
-        self.assertEqual(report["stop_reason"], "log_limit")
+        self.assertEqual(report["termination_reason"], "log_limit")
         self.assertFalse(report["logs_complete"])
         self.assertLessEqual(report["stdout_bytes"] + report["stderr_bytes"], 1024)
         self.assertIsNone(report["analysis"]["counts"])

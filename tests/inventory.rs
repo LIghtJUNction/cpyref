@@ -440,3 +440,87 @@ fn configured_cleanup_is_only_used_when_invoked_and_explicit_selections_override
     );
     assert_eq!(f.json(&["stats"])["count"], 2);
 }
+
+#[test]
+fn search_finds_old_unannotated_content_and_metadata_without_expanding_it() {
+    let f = Fixture::new();
+    let id = f.copy(&[]);
+    let note = f.copy(&["--note", "修改前的函数"]);
+    let v = f.json(&["search", "private payload", "--json"]);
+    assert_eq!(v["total"], 2);
+    assert!(v["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|r| r["id"] == id));
+    assert!(!v.to_string().contains("private payload"));
+    assert_eq!(
+        f.json(&["search", "private payload", "--metadata-only", "--json"])["total"],
+        0
+    );
+    let v = f.json(&["search", "修改前", "--json"]);
+    assert_eq!(v["references"][0]["id"], note);
+    assert_eq!(
+        v["references"][0]["matched_in"],
+        serde_json::json!(["note"])
+    );
+    assert_eq!(
+        f.json(&["search", "input", "--metadata-only", "--json"])["total"],
+        2
+    );
+    assert_eq!(f.json(&["search", &id[1..7], "--json"])["total"], 1);
+    assert_eq!(
+        f.json(&["search", "PRIVATE PAYLOAD", "--ignore-case", "--json"])["total"],
+        2
+    );
+    assert_eq!(f.json(&["search", "PRIVATE PAYLOAD", "--json"])["total"], 0);
+    let v = f.json(&[
+        "search", "private", "--json", "--limit", "1", "--offset", "1",
+    ]);
+    assert_eq!(v["total"], 2);
+    assert_eq!(v["references"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        f.json(&["--namespace", "other", "search", "private", "--json"])["total"],
+        0
+    );
+    assert_eq!(
+        f.json(&["search", "private", "--kind", "snapshot", "--json"])["total"],
+        0
+    );
+}
+
+#[test]
+fn search_handles_binary_and_chunk_boundary_matches_and_rejects_corruption() {
+    let f = Fixture::new();
+    let mut bytes = vec![0xff; 65534];
+    bytes.extend_from_slice("Kelvin needle\0".as_bytes());
+    fs::write(f.0.path().join("input"), bytes).unwrap();
+    let o = f.run(&["copy", "input"]);
+    assert!(o.status.success());
+    let id = String::from_utf8(o.stdout).unwrap().trim().to_owned();
+    assert_eq!(f.json(&["search", "Kelvin needle", "--json"])["total"], 1);
+    assert_eq!(
+        f.json(&["search", "kelvin needle", "--ignore-case", "--json"])["total"],
+        1
+    );
+    let context = f.json(&["context"]);
+    let path =
+        std::path::Path::new(context["store_path"].as_str().unwrap()).join(format!("{id}.ref"));
+    let mut bytes = fs::read(&path).unwrap();
+    *bytes.last_mut().unwrap() ^= 1;
+    fs::write(path, bytes).unwrap();
+    failure(f.run(&["search", "needle", "--json"]), "CORRUPT_REF");
+    assert_eq!(
+        f.json(&["search", "input", "--metadata-only", "--json"])["total"],
+        1
+    );
+}
+
+#[test]
+fn search_is_read_only_and_empty_or_oversized_queries_are_rejected() {
+    let f = Fixture::new();
+    assert_eq!(f.json(&["search", "missing", "--json"])["total"], 0);
+    failure(f.run(&["search", ""]), "INVALID_ARGUMENT");
+    failure(f.run(&["search", &"x".repeat(4097)]), "INVALID_ARGUMENT");
+    assert!(!f.0.path().join("store").exists());
+}

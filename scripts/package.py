@@ -61,6 +61,9 @@ def release_entries(root, binary, name, windows):
     files = [
         (binary, "cpyref.exe" if windows else "cpyref", 0o755),
         (regular_file(root / "LICENSE"), "LICENSE", 0o644),
+        (regular_file(root / "LICENSE.MIT"), "LICENSE.MIT", 0o644),
+        (regular_file(root / "AGENTS.md"), "AGENTS.md", 0o644),
+        (regular_file(root / "UPSTREAM.toml"), "UPSTREAM.toml", 0o644),
         (regular_file(root / "README.md"), "README.md", 0o644),
     ]
     entries = [(None, PurePosixPath(name), 0o755)]
@@ -166,6 +169,9 @@ def create_linux_packages(root, binary, target, version, out_dir, nfpm):
         CPYREF_ARCH="amd64" if target.startswith("x86_64-") else "arm64",
         CPYREF_BINARY=str(binary.resolve()),
         CPYREF_LICENSE=str((root / "LICENSE").resolve()),
+        CPYREF_MIT_LICENSE=str((root / "LICENSE.MIT").resolve()),
+        CPYREF_AGENTS=str((root / "AGENTS.md").resolve()),
+        CPYREF_UPSTREAM=str((root / "UPSTREAM.toml").resolve()),
         CPYREF_README=str((root / "README.md").resolve()),
     )
     formats = (("deb", ".deb"), ("rpm", ".rpm"), ("archlinux", ".pkg.tar.zst"))

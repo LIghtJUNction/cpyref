@@ -165,3 +165,16 @@ cpyref clean --note '临时' --apply --confirm PREVIEW_TOKEN
 `run` 正常保存后使用子命令的退出状态，失败命令仍在 stdout 返回已保存的测试摘要；执行器或记录错误仍使用 stderr JSON。
 `verify`、`snapshot check/diff`、`logs --check` 的“不匹配/无法确认”返回退出码 10 并输出状态 JSON，这与 copy 的失败协议分开。
 新错误包括 `WRONG_KIND`、`PATH_ENCODING`、`UNSAFE_SOURCE`、`SOURCE_CHANGED`、`REF_IN_USE`（退出码 4）、`RECORDING_FAILED`（退出码 5）和 `SNAPSHOT_CHANGED`（退出码 10）。
+
+## 搜索已保存引用
+
+```sh
+cpyref search '修改前' --json
+cpyref search 'def example' --source 'src/' --limit 20 --offset 0
+cpyref search 'TEST' --ignore-case --kind bytes
+cpyref search 'function' --metadata-only
+```
+
+query 是 1–4096 UTF-8 字节的字面子串，默认区分大小写。匹配 ID、来源、备注、kind，以及 bytes 引用的已保存正文；run/snapshot 容器只搜元数据。查询始终限制在当前项目、scope 和 namespace，查询的是保存内容而非现在的源文件。默认只显示元数据和 matched_in，正文不展开。`--metadata-only` 跳过正文，损坏正文仍可按元数据找回编号；默认正文搜索边扫描边校验完整哈希，损坏时报 CORRUPT_REF。
+
+`--source`、`--note` 为区分大小写的元数据子串筛选，`--kind bytes|run|snapshot` 限制类型；各筛选取交集。排序、limit 和 offset 与 list 相同，JSON 返回 total 和本页 references。ID 子串只能用来发现，其他操作仍需要完整 ID。搜索流式读取正文，内存有界；总耗时随选定空间中正文总量增长。

@@ -60,6 +60,8 @@ pub struct Options {
 struct Config {
     #[serde(default)]
     cleanup: CleanupConfig,
+    #[serde(default)]
+    run: crate::runner::RunConfig,
     max_entries: Option<usize>,
     scope: Option<Scope>,
     namespace: Option<String>,
@@ -75,6 +77,7 @@ pub struct CleanupConfig {
 
 #[derive(Debug)]
 pub struct Context {
+    pub run: crate::runner::RunConfig,
     pub cleanup: CleanupConfig,
     pub max_entries: usize,
     pub scope: Scope,
@@ -124,8 +127,9 @@ fn read_config(path: &Path, required: bool) -> Result<Option<Config>> {
         .map_err(|_| config_error(path, "Config must contain UTF-8 text."))?;
     let mut config: Config = toml::from_str(text).map_err(|_| {
         // Do not echo configuration values, which could contain private paths or secrets.
-        config_error(path, "Invalid TOML or unknown fields. Supported fields: scope, namespace, store, max_entries, cleanup (older_than_days, keep_latest).")
+        config_error(path, "Invalid TOML or unknown fields. Supported fields: scope, namespace, store, max_entries, cleanup (older_than_days, keep_latest), run (max_log_bytes, timeout_seconds, min_free_bytes).")
     })?;
+    config.run.clone().resolve().map_err(|_| config_error(path, "Invalid run limits: max_log_bytes must be 1..1073741824; timeout_seconds must be 1..86400."))?;
     if config
         .namespace
         .as_deref()
@@ -330,7 +334,13 @@ impl Context {
         } else {
             trusted.cleanup
         };
+        let run = if matches!(scope, Scope::Project | Scope::Directory) {
+            local.run.merge(trusted.run)
+        } else {
+            trusted.run
+        };
         Ok(Self {
+            run,
             cleanup,
             max_entries: options
                 .max_entries
@@ -355,6 +365,7 @@ impl Context {
     /// Diagnostics contain locations and settings, never a snapshot body. This does not create files.
     pub fn report(&self) -> Value {
         json!({
+            "run": self.run.clone().resolve().ok(),
             "cleanup": self.cleanup,
             "max_entries": self.max_entries,
             "scope": self.scope,

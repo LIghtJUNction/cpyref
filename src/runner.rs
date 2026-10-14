@@ -5,6 +5,7 @@ use crate::{
     snapshot::{self, Entry, Manifest},
     store::{Metadata, RecordKind, Store},
 };
+use command_group::CommandGroup;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -14,7 +15,11 @@ use std::{
     io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tempfile::NamedTempFile;
 
@@ -55,8 +60,6 @@ pub struct Artifact {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunRecord {
     #[serde(default)]
-    pub stop_reason: Option<String>,
-    #[serde(default)]
     pub redacted_env: Vec<String>,
     pub schema: u8,
     pub command: Vec<String>,
@@ -70,6 +73,10 @@ pub struct RunRecord {
     pub stdout_bytes: u64,
     pub stderr_bytes: u64,
     pub logs_complete: bool,
+    #[serde(default)]
+    pub limits: Option<RunLimits>,
+    #[serde(default)]
+    pub termination_reason: Option<String>,
     pub analysis: Analysis,
     pub snapshot: Option<String>,
     pub source_before: Option<Manifest>,
@@ -79,13 +86,133 @@ pub struct RunRecord {
 }
 
 pub struct RunOptions {
-    pub limits: crate::run_guard::Limits,
+    pub redact_env: Vec<String>,
     pub command: Vec<String>,
     pub parser: String,
     pub snapshot: Option<String>,
     pub inputs: Vec<PathBuf>,
     pub artifacts: Vec<PathBuf>,
     pub inherit_stdin: bool,
+    pub limits: RunLimits,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunConfig {
+    pub max_log_bytes: Option<u64>,
+    pub timeout_seconds: Option<u64>,
+    pub min_free_bytes: Option<u64>,
+}
+impl RunConfig {
+    pub fn merge(self, fallback: Self) -> Self {
+        Self {
+            max_log_bytes: self.max_log_bytes.or(fallback.max_log_bytes),
+            timeout_seconds: self.timeout_seconds.or(fallback.timeout_seconds),
+            min_free_bytes: self.min_free_bytes.or(fallback.min_free_bytes),
+        }
+    }
+    pub fn resolve(self) -> Result<RunLimits> {
+        let limits = RunLimits {
+            max_log_bytes: self.max_log_bytes.unwrap_or(64 * 1024 * 1024),
+            timeout_seconds: self.timeout_seconds.unwrap_or(600),
+            min_free_bytes: self.min_free_bytes.unwrap_or(512 * 1024 * 1024),
+        };
+        if !(1..=1024 * 1024 * 1024).contains(&limits.max_log_bytes)
+            || !(1..=86400).contains(&limits.timeout_seconds)
+        {
+            return Err(Error::invalid("run max_log_bytes must be 1..1073741824 and timeout_seconds 1..86400; unbounded capture is not supported."));
+        }
+        Ok(limits)
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunLimits {
+    pub max_log_bytes: u64,
+    pub timeout_seconds: u64,
+    pub min_free_bytes: u64,
+}
+struct CaptureState {
+    raw_bytes: AtomicU64,
+    bytes: AtomicU64,
+    // 1: log cap, 2: I/O failure; first capture failure wins.
+    reason: AtomicU8,
+    cancel: AtomicBool,
+}
+impl CaptureState {
+    fn stop(&self, reason: u8) {
+        let _ = self
+            .reason
+            .compare_exchange(0, reason, Ordering::SeqCst, Ordering::SeqCst);
+    }
+}
+fn reserve(counter: &AtomicU64, cap: u64, requested: usize) -> usize {
+    let previous = counter
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |used| {
+            Some(used.saturating_add(requested as u64).min(cap))
+        })
+        .expect("infallible byte reservation");
+    (cap - previous).min(requested as u64) as usize
+}
+
+fn capture(
+    mut pipe: impl Read,
+    mut file: File,
+    state: Arc<CaptureState>,
+    cap: u64,
+    mut redactor: crate::redact::Redactor,
+) -> io::Result<()> {
+    let result = (|| {
+        let mut buffer = [0_u8; 64 * 1024];
+        while !state.cancel.load(Ordering::SeqCst) && state.reason.load(Ordering::SeqCst) == 0 {
+            let n = match pipe.read(&mut buffer) {
+                Ok(n) => n,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10));
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+            if state.cancel.load(Ordering::SeqCst) || state.reason.load(Ordering::SeqCst) != 0 {
+                break;
+            }
+            let allowed = reserve(&state.raw_bytes, cap, n);
+            let bytes = redactor.feed(&buffer[..allowed], n == 0);
+            let keep = reserve(&state.bytes, cap, bytes.len());
+            file.write_all(&bytes[..keep])?;
+            if allowed < n || keep < bytes.len() {
+                state.stop(1);
+                break;
+            }
+            if n == 0 {
+                break;
+            }
+        }
+        // A cancelled stream drops its pending original suffix, never flushing it raw.
+        file.sync_all()
+    })();
+    if result.is_err() {
+        state.stop(2);
+    }
+    result
+}
+#[cfg(unix)]
+fn cancellable(pipe: &impl std::os::fd::AsFd) -> Result<()> {
+    let flags =
+        rustix::fs::fcntl_getfl(pipe).map_err(|e| Error::io("Read pipe flags", e.into()))?;
+    rustix::fs::fcntl_setfl(pipe, flags | rustix::fs::OFlags::NONBLOCK)
+        .map_err(|e| Error::io("Set cancellable pipe", e.into()))
+}
+fn missing_group(error: &io::Error) -> bool {
+    #[cfg(unix)]
+    if error.raw_os_error() == Some(rustix::io::Errno::SRCH.raw_os_error()) {
+        return true;
+    }
+    error.kind() == io::ErrorKind::NotFound
+}
+fn incomplete(analysis: &mut Analysis) {
+    analysis.counts = None;
+    analysis.parse_status = "unknown".into();
 }
 
 fn stamp() -> Result<u64> {
@@ -364,7 +491,7 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
     if options.command.is_empty() {
         return Err(Error::invalid("run requires a command after --."));
     }
-    let protections = crate::run_guard::Prepared::new(&options.limits)?;
+    let redaction = crate::redact::Prepared::new(&options.redact_env)?;
     let store = context.store()?;
     let parser = match options.parser.as_str() {
         "auto" => {
@@ -394,6 +521,16 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
         None
     };
     store.check_capacity(context.max_entries)?;
+    let required_space = options
+        .limits
+        .min_free_bytes
+        .saturating_add(options.limits.max_log_bytes.saturating_mul(3))
+        .saturating_add(MAX_DESCRIPTOR * 2 + 1024 * 1024);
+    let available = store.available_space()?;
+    if available < required_space {
+        return Err(Error::new("DISK_SPACE", 9, "Insufficient free space for bounded capture and record packing; command was not started.")
+            .details(json!({"available_bytes": available, "required_bytes": required_space})));
+    }
     let stdout = store.staging_file()?;
     let stderr = store.staging_file()?;
     let started_at = stamp()?;
@@ -409,14 +546,140 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let captured = protections.capture(&mut command, stdout, stderr)?;
-    let mut stdout = captured.stdout;
-    let mut stderr = captured.stderr;
-    let status = captured.status;
-    let stop_reason = captured.stop_reason;
-    let logs_complete = captured.logs_complete;
+    // Clone files before spawning so all fallible setup precedes command execution.
+    let out_file = stdout
+        .as_file()
+        .try_clone()
+        .map_err(|e| Error::io("Clone stdout file", e))?;
+    let err_file = stderr
+        .as_file()
+        .try_clone()
+        .map_err(|e| Error::io("Clone stderr file", e))?;
+    let mut child = command
+        .group_spawn()
+        .map_err(|e| Error::io("Start recorded command group", e))?;
+    let out = child.inner().stdout.take().expect("piped stdout");
+    let err = child.inner().stderr.take().expect("piped stderr");
+    #[cfg(unix)]
+    if let Err(error) = cancellable(&out).and_then(|_| cancellable(&err)) {
+        let _ = child.kill();
+        return Err(error);
+    }
+    let state = Arc::new(CaptureState {
+        raw_bytes: AtomicU64::new(0),
+        bytes: AtomicU64::new(0),
+        reason: AtomicU8::new(0),
+        cancel: AtomicBool::new(false),
+    });
+    let cap = options.limits.max_log_bytes;
+    let out_state = Arc::clone(&state);
+    let out_redactor = redaction.stream();
+    let out_thread =
+        std::thread::spawn(move || capture(out, out_file, out_state, cap, out_redactor));
+    let err_state = Arc::clone(&state);
+    let err_redactor = redaction.stream();
+    let err_thread =
+        std::thread::spawn(move || capture(err, err_file, err_state, cap, err_redactor));
+    let mut status = None;
+    let mut termination_reason = None;
+    let mut last_space_check = Instant::now();
+    let mut cleanup_error = None;
+    loop {
+        match child.try_wait() {
+            Ok(value) => {
+                if value.is_some() {
+                    status = value;
+                }
+            }
+            Err(error) => {
+                cleanup_error = Some(error.to_string());
+                termination_reason = Some("wait_failed".to_owned());
+            }
+        }
+        let reason = state.reason.load(Ordering::SeqCst);
+        if reason != 0 {
+            termination_reason = Some(
+                if reason == 1 {
+                    "log_limit"
+                } else {
+                    "capture_failed"
+                }
+                .into(),
+            );
+        }
+        // A complete EOF + exit wins over a deadline observed only after completion.
+        if termination_reason.is_none()
+            && status.is_some()
+            && out_thread.is_finished()
+            && err_thread.is_finished()
+        {
+            break;
+        }
+        if termination_reason.is_none()
+            && timer.elapsed() >= Duration::from_secs(options.limits.timeout_seconds)
+        {
+            termination_reason = Some("timeout".into());
+        }
+        if termination_reason.is_none() && last_space_check.elapsed() >= Duration::from_millis(250)
+        {
+            let required = options
+                .limits
+                .min_free_bytes
+                .saturating_add(state.bytes.load(Ordering::SeqCst).saturating_mul(2))
+                .saturating_add(MAX_DESCRIPTOR * 2 + 1024 * 1024);
+            match store.available_space() {
+                Ok(free) if free >= required => {}
+                Ok(_) => termination_reason = Some("disk_space".into()),
+                Err(_) => termination_reason = Some("disk_check_failed".into()),
+            }
+            last_space_check = Instant::now();
+        }
+        if termination_reason.is_some() {
+            // Kill this process group/job only. Never wait indefinitely for inherited pipes.
+            if let Err(error) = child.kill() {
+                if !missing_group(&error) {
+                    cleanup_error = Some(error.to_string());
+                }
+            }
+            state.cancel.store(true, Ordering::SeqCst);
+            let cleanup = Instant::now();
+            while cleanup.elapsed() < Duration::from_secs(2) {
+                if let Ok(Some(value)) = child.try_wait() {
+                    status = Some(value);
+                }
+                if status.is_some() && out_thread.is_finished() && err_thread.is_finished() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
     let duration_ms = timer.elapsed().as_millis().min(u64::MAX as u128) as u64;
     let finished_at = stamp();
+    if status.is_none()
+        || !out_thread.is_finished()
+        || !err_thread.is_finished()
+        || cleanup_error.is_some()
+    {
+        return Err(Error::new(
+            "RECORDING_FAILED",
+            5,
+            "Command cleanup or pipe capture did not finish within the bounded grace period.",
+        )
+        .details(
+            json!({"termination_reason": termination_reason, "cleanup_error": cleanup_error,
+                "stdout": preserve(stdout), "stderr": preserve(stderr), "logs_complete": false}),
+        ));
+    }
+    let out_result = out_thread
+        .join()
+        .unwrap_or_else(|_| Err(io::Error::other("stdout capture panicked")));
+    let err_result = err_thread
+        .join()
+        .unwrap_or_else(|_| Err(io::Error::other("stderr capture panicked")));
+    let status = status.expect("checked completed child");
     let command_exit = status.code();
     #[cfg(unix)]
     let signal = {
@@ -425,13 +688,20 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
     };
     #[cfg(not(unix))]
     let signal: Option<i32> = None;
-    let wrapper_exit = match stop_reason.as_deref() {
+    let logs_complete = termination_reason.is_none();
+    let wrapper_exit = match termination_reason.as_deref() {
         Some("timeout") => 124,
-        Some("log_limit") => 125,
-        _ => command_exit
+        Some(_) => 125,
+        None => command_exit
             .unwrap_or_else(|| signal.map_or(1, |s| 128 + s))
             .clamp(0, 255) as u8,
     };
+    if let Err(error) = out_result.and(err_result) {
+        return Err(Error::new("RECORDING_FAILED", 5, format!("Command ended but log capture failed: {error}"))
+            .details(json!({"command_exit": command_exit, "signal": signal, "stdout": preserve(stdout), "stderr": preserve(stderr), "logs_complete": false})));
+    }
+    let mut stdout = stdout;
+    let mut stderr = stderr;
     // Every failure after execution preserves the full captured streams as local recovery material.
     let recorded = (|| -> Result<(Metadata, RunRecord)> {
         stdout.rewind().map_err(|e| Error::io("Rewind stdout", e))?;
@@ -446,8 +716,7 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
             4096,
         )?;
         if !logs_complete {
-            analysis.counts = None;
-            analysis.parse_status = "unknown".into();
+            incomplete(&mut analysis);
         }
         let source_after = if let Some(manifest) = &source_before {
             match snapshot::check(manifest) {
@@ -491,9 +760,8 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
         }
         let record = RunRecord {
             schema: 1,
-            command: protections.command(&options.command),
-            stop_reason: stop_reason.clone(),
-            redacted_env: protections.redacted_env.clone(),
+            command: redaction.command(&options.command),
+            redacted_env: redaction.names.clone(),
             cwd: context.cwd.clone(),
             started_at,
             finished_at: finished_at?,
@@ -512,6 +780,8 @@ pub fn execute(context: &Context, options: RunOptions) -> Result<(Value, u8)> {
                 .map_err(|e| Error::io("Read stderr size", e))?
                 .len(),
             logs_complete,
+            limits: Some(options.limits.clone()),
+            termination_reason: termination_reason.clone(),
             analysis,
             snapshot: options.snapshot.clone(),
             source_before,
@@ -579,9 +849,9 @@ pub fn summary(id: &str, record: &RunRecord) -> Value {
     }
     json!({"reference": id, "kind": "run", "recording_status": "saved", "command_exit": record.command_exit,
         "signal": record.signal, "wrapper_exit": record.wrapper_exit, "logs_complete": record.logs_complete,
+        "limits": record.limits, "termination_reason": record.termination_reason, "redacted_env": record.redacted_env,
         "stdout_bytes": record.stdout_bytes, "stderr_bytes": record.stderr_bytes, "duration_ms": record.duration_ms, "started_at": record.started_at, "finished_at": record.finished_at,
         "analysis": record.analysis, "snapshot": record.snapshot, "source_after": source_after,
-        "stop_reason": record.stop_reason, "redacted_env": record.redacted_env,
         "artifact_count": record.artifacts.len()})
 }
 
@@ -641,8 +911,7 @@ pub fn failed(run: &mut LoadedRun, offset: u64, limit: usize, budget: usize) -> 
     analyzer.scan((&mut run.file).take(run.record.stderr_bytes), "stderr")?;
     let mut analysis = analyzer.finish(&run.record.analysis.parser, run.record.command_exit);
     if !run.record.logs_complete {
-        analysis.counts = None;
-        analysis.parse_status = "unknown".into();
+        incomplete(&mut analysis);
     }
     Ok(analysis)
 }

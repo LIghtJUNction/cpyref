@@ -80,6 +80,9 @@ retention requirements authorize deletion; there is no automatic expiry.
 
 Use `copy --note 'purpose'` for a short retrieval note (at most 4096 UTF-8 bytes).
 Use `list --limit 20 --source 'src/' --note 'purpose'` to find metadata in the agreed space;
+`search QUERY --json` searches saved byte bodies plus metadata, without expanding content; use
+`--metadata-only` to skip bodies, `--kind bytes|run|snapshot`, and `--source`/`--note` to narrow.
+Queries are literal and case sensitive unless `--ignore-case`; complete IDs are required for retrieval.
 `--json` provides structured output and `--offset` paginates. Do not switch spaces to search.
 
 Preview boundaries with `copy ... --dry-run`: it reports positions and sizes without saving.
@@ -159,21 +162,23 @@ For advanced matching or limits, run `cpyref copy --help` or consult the
 For configuration, moved projects or explicit shared spaces, consult
 [project spaces](https://github.com/LIghtJUNction/cpyref/blob/main/docs/project-spaces.md).
 
-## Safe edits and bounded runs (0.2.0 source)
+Run safety: combined stdout/stderr default cap is 64 MiB; timeout is 600 seconds including pipe drain.
+`run --max-log-bytes N --timeout SECONDS --min-free-bytes N` overrides `[run]` config defaults.
+The free-space reserve defaults to 512 MiB plus capture/packing headroom. No unlimited log/timeout mode.
+Timeout exits 124; log/disk protection exits 125. Preserve partial logs; `logs_complete=false` means
+counts are unknown even if a completed suite appears in the prefix. Never retry commands automatically.
+These protections do not impose a quota on files written by the command itself or sandbox escaped descendants.
 
-For an authorized local edit, use `insert` or `replace` with a complete bytes reference.
-First use `--dry-run`. Inspect the position and byte counts. Pass its `before_sha256`
-as `--expect-sha256` on the same operation. Never bypass TARGET_CHANGED or guess an
-occurrence to hide AMBIGUOUS. The tools do not add newlines or infer source-language syntax.
+## Safe edits and explicit redaction (0.3.0 development)
 
-`run` defaults to a 900-second command/pipe deadline and a combined 64 MiB stdout/stderr
-budget. Set `--timeout` and `--max-log-bytes` deliberately; zero disables that limit.
-Exit 124 means the deadline stopped capture; 125 means the byte budget stopped capture.
-Check stop_reason, logs_complete and command_exit separately. Do not retry commands
-with side effects merely because they stopped or their record could not be saved.
+Use `insert` or `replace` only for an authorized edit with a complete bytes reference.
+Preview with `--dry-run`, inspect positions and sizes, then pass `before_sha256` using
+`--expect-sha256` on the same operation. Do not bypass TARGET_CHANGED or hide AMBIGUOUS.
+No newlines or source-language structure are inferred.
 
-`--redact-env NAME` removes the exact environment value from captured logs and stored
-argv before disk writes. It does not discover secrets, encrypt records or remove values
-from the child's environment. Encoded values, source paths and other child files are
-not protected. The resulting streams are redacted records, not byte-exact original logs.
-See docs/hardening.md for guarantees and limits.
+Keep the existing run timeout, byte budget and free-space checks. Do not disable them.
+`--redact-env NAME` replaces the selected environment value in logs and stored argv
+before disk writes. Values split between reads are handled. Missing/invalid settings
+fail before execution. No automatic secret detection, encryption or protection of
+encoded values, path metadata or child-created files is provided. Redacted records
+are not byte-exact original output. Check redacted_env and logs_complete separately.

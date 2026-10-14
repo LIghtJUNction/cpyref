@@ -6,10 +6,11 @@
 
 默认按项目隔离，支持同机多 Agent 协作。支持 Linux、macOS 和 Windows，不依赖系统剪贴板或桌面环境。
 
-## 版本范围
+## 开发版本
 
-当前源码面向 0.2.0。已发布的 0.1.1 安装包不包含后续新增的清单、测试记录、局部写入和运行限制。
-未发布新版本前，从源码安装才能使用这些功能。参见[安全写入与运行限制](docs/hardening.md)。
+当前开发分支面向 0.3.0，新增带目标哈希前置条件的 `insert` / `replace` 和写入前 `--redact-env` 脱敏。
+运行上限、磁盘余量检查和进程清理沿用并保留 0.2.1 主分支实现。新功能用法见[安全写入与运行限制](docs/hardening.md)。
+开发分支不代表已发布新安装包。
 
 ## 安装
 
@@ -83,6 +84,8 @@ cpyref context
 ```sh
 cpyref copy src/example.py --from 'def example' --to 'def next' --exclude-end --note '修改前的函数'
 cpyref list --limit 20
+cpyref search '修改前' --json
+cpyref search 'def example' --source 'src/'
 cpyref list --source 'src/' --note '修改前'
 cpyref copy src/example.py --lines 10:20 --dry-run
 cpyref stats
@@ -99,7 +102,7 @@ Linux 用户配置是 `~/.config/cpyref/config.toml`，项目配置是项目根 
 
 ```sh
 # 流式保存完整日志，只返回测试摘要和引用
-cpyref run --input src --input tests --input Cargo.toml --input Cargo.lock \
+cpyref run --timeout 600 --max-log-bytes 67108864 --input src --input tests --input Cargo.toml --input Cargo.lock \
   --artifact target/debug/cpyref -- cargo test --locked --all-targets
 
 # 将 RUN_REF 换成上一步实际返回的 reference
@@ -117,7 +120,7 @@ cpyref handoff REF --format sh
 ```
 
 本轮内置 Cargo/libtest 计数解析，其他命令仍保留完整日志，无法确认的计数为未知；跳过单列。源码快照是明确选中文件的哈希清单，不保存源码正文，也不声称追踪编译器实际依赖。关联的快照受依赖保护，清理不会留下缺少来源的测试记录。
-完整命令、退出码、长日志和恢复边界见[测试日志、源码清单与交接](docs/workflows.md)。这些功能在当前源码中提供，已发布的旧安装包可能尚未包含。
+完整命令、退出码、长日志和恢复边界见[测试日志、源码清单与交接](docs/workflows.md)。这些功能从 0.2.1 开始提供；旧安装包需要升级。
 
 ## 选择内容
 
@@ -175,3 +178,5 @@ cargo clippy --locked --all-targets -- -D warnings
 ## 许可证
 
 [Agent Upstream License（AUL）1.0-draft.1](LICENSE) © 2026 LIghtJUNction。参见 [Agent 执行规则](AGENTS.md) 与 [上游配置](UPSTREAM.toml)。这是自定义许可证草案，尚未获 OSI 批准。此前发布的 MIT 版本仍按原条款使用；原许可证保存在 [LICENSE.MIT](LICENSE.MIT)。已单独授权的第三方材料仍适用原条款。
+
+`run` 默认限制合计日志 64 MiB、执行及管道捕获 600 秒，并预留 512 MiB 空闲空间及打包余量；触发保护会停止命令、保留部分日志并明确标记不完整。配置与退出码见[工作流参考](docs/workflows.md#执行和空间保护)。

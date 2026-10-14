@@ -33,7 +33,14 @@ pub fn execute(command: Command, context: &Context) -> Result<u8> {
                 inputs: args.input,
                 artifacts: args.artifact,
                 inherit_stdin: args.inherit_stdin,
-                limits: args.limits,
+                redact_env: args.redact_env,
+                limits: runner::RunConfig {
+                    max_log_bytes: args.max_log_bytes,
+                    timeout_seconds: args.timeout,
+                    min_free_bytes: args.min_free_bytes,
+                }
+                .merge(context.run.clone())
+                .resolve()?,
             };
             let (report, exit) = runner::execute(context, options)?;
             print_json(&report)?;
