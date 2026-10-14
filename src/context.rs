@@ -1,10 +1,17 @@
 //! Resolve one clipboard space before any snapshot is read or written.
-use crate::{error::{Error, Result}, store::Store};
+use crate::{
+    error::{Error, Result},
+    store::Store,
+};
 use clap::{Args, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{fs, io::Read, path::{Path, PathBuf}};
+use std::{
+    fs,
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 const PROJECT_CONFIG: &str = ".cpyref.toml";
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
@@ -36,7 +43,12 @@ pub struct Options {
     #[arg(long, global = true, env = "CPYREF_PROJECT")]
     pub project: Option<PathBuf>,
     /// Explicit trusted TOML config; replaces automatic user and project config files.
-    #[arg(long, global = true, env = "CPYREF_CONFIG", conflicts_with = "no_config")]
+    #[arg(
+        long,
+        global = true,
+        env = "CPYREF_CONFIG",
+        conflicts_with = "no_config"
+    )]
     pub config: Option<PathBuf>,
     /// Ignore config file settings. Project marker discovery still applies.
     #[arg(long, global = true, env = "CPYREF_NO_CONFIG")]
@@ -76,15 +88,17 @@ pub struct Context {
 }
 
 fn config_error(path: &Path, message: impl Into<String>) -> Error {
-    Error::new("CONFIG_ERROR", 4, message)
-        .details(json!({"path": path.to_string_lossy()}))
+    Error::new("CONFIG_ERROR", 4, message).details(json!({"path": path.to_string_lossy()}))
 }
 
 fn valid_namespace(name: &str) -> bool {
     let bytes = name.as_bytes();
-    !bytes.is_empty() && bytes.len() <= 64
+    !bytes.is_empty()
+        && bytes.len() <= 64
         && (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit())
-        && bytes.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-' || *b == b'_')
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-' || *b == b'_')
 }
 
 fn read_config(path: &Path, required: bool) -> Result<Option<Config>> {
@@ -94,7 +108,10 @@ fn read_config(path: &Path, required: bool) -> Result<Option<Config>> {
         Err(e) => return Err(config_error(path, format!("Cannot read config file: {e}"))),
     };
     if !metadata.is_file() || metadata.file_type().is_symlink() {
-        return Err(config_error(path, "Config must be a regular file, not a symbolic link."));
+        return Err(config_error(
+            path,
+            "Config must be a regular file, not a symbolic link.",
+        ));
     }
     let mut bytes = Vec::new();
     fs::File::open(path)
@@ -109,7 +126,11 @@ fn read_config(path: &Path, required: bool) -> Result<Option<Config>> {
         // Do not echo configuration values, which could contain private paths or secrets.
         config_error(path, "Invalid TOML or unknown fields. Supported fields: scope, namespace, store, max_entries, cleanup (older_than_days, keep_latest).")
     })?;
-    if config.namespace.as_deref().is_some_and(|name| !valid_namespace(name)) {
+    if config
+        .namespace
+        .as_deref()
+        .is_some_and(|name| !valid_namespace(name))
+    {
         return Err(config_error(path, "Namespace must be 1-64 lowercase ASCII letters, digits, - or _, starting with a letter or digit."));
     }
     if let Some(store) = &mut config.store {
@@ -117,21 +138,36 @@ fn read_config(path: &Path, required: bool) -> Result<Option<Config>> {
             return Err(config_error(path, "Store path must not be empty."));
         }
         // Relative file settings are anchored to the file, never the caller's subdirectory.
-        *store = path.parent().unwrap_or_else(|| Path::new(".")).join(&*store);
+        *store = path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(&*store);
     }
     Ok(Some(config))
 }
 
 fn directory(path: &Path) -> Result<PathBuf> {
     if path.as_os_str().is_empty() {
-        return Err(Error::new("PROJECT_ERROR", 4, "Project directory must not be empty."));
+        return Err(Error::new(
+            "PROJECT_ERROR",
+            4,
+            "Project directory must not be empty.",
+        ));
     }
     let canonical = fs::canonicalize(path).map_err(|e| {
-        Error::new("PROJECT_ERROR", 4, format!("Cannot resolve project directory: {e}"))
-            .details(json!({"path": path.to_string_lossy()}))
+        Error::new(
+            "PROJECT_ERROR",
+            4,
+            format!("Cannot resolve project directory: {e}"),
+        )
+        .details(json!({"path": path.to_string_lossy()}))
     })?;
     if !canonical.is_dir() {
-        return Err(Error::new("PROJECT_ERROR", 4, "Project root must be an existing directory."));
+        return Err(Error::new(
+            "PROJECT_ERROR",
+            4,
+            "Project root must be an existing directory.",
+        ));
     }
     Ok(canonical)
 }
@@ -146,8 +182,12 @@ fn discover(cwd: &Path) -> Result<(PathBuf, &'static str)> {
                 Ok(meta) => {
                     let valid_type = meta.is_file() || (name == ".git" && meta.is_dir());
                     if !valid_type || meta.file_type().is_symlink() {
-                        return Err(Error::new("PROJECT_ERROR", 4, "Project marker must be a real file or .git directory.")
-                            .details(json!({"path": marker.to_string_lossy()})));
+                        return Err(Error::new(
+                            "PROJECT_ERROR",
+                            4,
+                            "Project marker must be a real file or .git directory.",
+                        )
+                        .details(json!({"path": marker.to_string_lossy()})));
                     }
                     return Ok((parent.to_path_buf(), source));
                 }
@@ -180,12 +220,18 @@ impl Context {
     /// Explicit paths make resolution testable without changing process-wide environment or cwd.
     pub fn resolve_at(options: &Options, cwd: &Path, user_config: Option<&Path>) -> Result<Self> {
         if options.no_config && options.config.is_some() {
-            return Err(Error::invalid("--config and --no-config cannot be combined."));
+            return Err(Error::invalid(
+                "--config and --no-config cannot be combined.",
+            ));
         }
         let cwd = directory(cwd)?;
         let (project, project_source) = match &options.project {
             Some(path) if path.as_os_str().is_empty() => {
-                return Err(Error::new("PROJECT_ERROR", 4, "Project directory must not be empty."));
+                return Err(Error::new(
+                    "PROJECT_ERROR",
+                    4,
+                    "Project directory must not be empty.",
+                ));
             }
             Some(path) => (directory(&cwd.join(path))?, "explicit"),
             None => discover(&cwd)?,
@@ -207,7 +253,9 @@ impl Context {
                 let path = project.join(PROJECT_CONFIG);
                 if let Some(config) = read_config(&path, false)? {
                     // Repository-controlled files must not silently redirect data or enable sharing.
-                    if config.store.is_some() || matches!(config.scope, Some(Scope::Shared | Scope::Global)) {
+                    if config.store.is_some()
+                        || matches!(config.scope, Some(Scope::Shared | Scope::Global))
+                    {
                         return Err(config_error(&path, "Automatic project config may set only project/directory scope, namespace, max_entries, and cleanup defaults. For sharing or a custom store, explicitly select a trusted --config file or use CLI/environment settings."));
                     }
                     local = config;
@@ -215,7 +263,11 @@ impl Context {
                 }
             }
         }
-        let scope = options.scope.or(local.scope).or(trusted.scope).unwrap_or(Scope::Project);
+        let scope = options
+            .scope
+            .or(local.scope)
+            .or(trusted.scope)
+            .unwrap_or(Scope::Project);
         if options.project.is_some() && scope != Scope::Project {
             return Err(Error::invalid("--project/CPYREF_PROJECT requires project scope; it is not used by directory, shared, or global scope."));
         }
@@ -225,7 +277,11 @@ impl Context {
         } else {
             None
         };
-        let namespace = options.namespace.clone().or(local_namespace).or(trusted.namespace);
+        let namespace = options
+            .namespace
+            .clone()
+            .or(local_namespace)
+            .or(trusted.namespace);
         if scope == Scope::Shared && namespace.is_none() {
             return Err(Error::invalid("Shared scope requires an explicit --namespace/CPYREF_NAMESPACE or a namespace in the trusted config."));
         }
@@ -238,28 +294,49 @@ impl Context {
         }
         let base = options.store.clone().or(trusted.store);
         let base = match base {
-            Some(path) if path.as_os_str().is_empty() => return Err(Error::invalid("Store path must not be empty.")),
+            Some(path) if path.as_os_str().is_empty() => {
+                return Err(Error::invalid("Store path must not be empty."))
+            }
             Some(path) => cwd.join(path),
             None => cwd.join(Store::default_root()?),
         };
         // Prefix names so valid namespaces such as con/nul/com1 are safe on Windows too.
         let directory_name = format!("ns-{namespace}");
         let store_path = match scope {
-            Scope::Project => base.join("projects").join(identity(scope, &project)).join(&directory_name),
-            Scope::Directory => base.join("directories").join(identity(scope, &cwd)).join(&directory_name),
+            Scope::Project => base
+                .join("projects")
+                .join(identity(scope, &project))
+                .join(&directory_name),
+            Scope::Directory => base
+                .join("directories")
+                .join(identity(scope, &cwd))
+                .join(&directory_name),
             Scope::Shared => base.join("shared").join(&directory_name),
             Scope::Global => base.clone(),
         };
-        let local_limit = if matches!(scope, Scope::Project | Scope::Directory) { local.max_entries } else { None };
+        let local_limit = if matches!(scope, Scope::Project | Scope::Directory) {
+            local.max_entries
+        } else {
+            None
+        };
         let cleanup = if matches!(scope, Scope::Project | Scope::Directory) {
             CleanupConfig {
-                older_than_days: local.cleanup.older_than_days.or(trusted.cleanup.older_than_days),
+                older_than_days: local
+                    .cleanup
+                    .older_than_days
+                    .or(trusted.cleanup.older_than_days),
                 keep_latest: local.cleanup.keep_latest.or(trusted.cleanup.keep_latest),
             }
-        } else { trusted.cleanup };
+        } else {
+            trusted.cleanup
+        };
         Ok(Self {
             cleanup,
-            max_entries: options.max_entries.or(local_limit).or(trusted.max_entries).unwrap_or(0),
+            max_entries: options
+                .max_entries
+                .or(local_limit)
+                .or(trusted.max_entries)
+                .unwrap_or(0),
             scope,
             namespace,
             cwd,

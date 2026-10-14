@@ -61,10 +61,16 @@ fn line_starts(data: &[u8]) -> Vec<usize> {
 
 fn line_range(value: &str, starts: &[usize], length: usize) -> Result<Range<usize>> {
     let (first, last) = value.split_once(':').unwrap_or((value, value));
-    let start = first.parse::<usize>().map_err(|_| Error::invalid("Use N or START:END for a line range."))?;
-    let end = last.parse::<usize>().map_err(|_| Error::invalid("Use N or START:END for a line range."))?;
+    let start = first
+        .parse::<usize>()
+        .map_err(|_| Error::invalid("Use N or START:END for a line range."))?;
+    let end = last
+        .parse::<usize>()
+        .map_err(|_| Error::invalid("Use N or START:END for a line range."))?;
     if start == 0 || end < start {
-        return Err(Error::invalid("Line numbers start at 1; END must be at least START."));
+        return Err(Error::invalid(
+            "Line numbers start at 1; END must be at least START.",
+        ));
     }
     if end > starts.len() {
         return Err(Error::new("NO_MATCH", 2, "The requested lines do not exist.")
@@ -95,11 +101,19 @@ fn compile(pattern: &str, spec: &Spec) -> Result<Regex> {
 
 fn push_match(ranges: &mut Vec<Range<usize>>, range: Range<usize>) -> Result<()> {
     if range.is_empty() {
-        return Err(Error::new("EMPTY_SELECTION", 8, "A selector produced a zero-byte match; use a non-empty selector."));
+        return Err(Error::new(
+            "EMPTY_SELECTION",
+            8,
+            "A selector produced a zero-byte match; use a non-empty selector.",
+        ));
     }
     if ranges.len() == MAX_MATCHES {
-        return Err(Error::new("MATCH_LIMIT", 9, "Too many matches; narrow the search with --within or a more specific pattern.")
-            .details(json!({"limit": MAX_MATCHES})));
+        return Err(Error::new(
+            "MATCH_LIMIT",
+            9,
+            "Too many matches; narrow the search with --within or a more specific pattern.",
+        )
+        .details(json!({"limit": MAX_MATCHES})));
     }
     ranges.push(range);
     Ok(())
@@ -110,14 +124,20 @@ fn literal_matches(text: &str, pattern: &str, spec: &Spec) -> Result<Vec<Range<u
     if pattern.is_empty() {
         return Err(Error::invalid("A text pattern cannot be empty."));
     }
-    let insensitive = if spec.ignore_case { Some(compile(&regex::escape(pattern), spec)?) } else { None };
+    let insensitive = if spec.ignore_case {
+        Some(compile(&regex::escape(pattern), spec)?)
+    } else {
+        None
+    };
     let mut matches = Vec::new();
     let mut cursor = 0;
     while cursor < text.len() {
         let found = if let Some(re) = &insensitive {
             re.find_at(text, cursor).map(|m| m.range())
         } else {
-            text[cursor..].find(pattern).map(|i| cursor + i..cursor + i + pattern.len())
+            text[cursor..]
+                .find(pattern)
+                .map(|i| cursor + i..cursor + i + pattern.len())
         };
         let Some(range) = found else { break };
         // Advance by one Unicode scalar, not by match length, to retain overlaps.
@@ -127,19 +147,35 @@ fn literal_matches(text: &str, pattern: &str, spec: &Spec) -> Result<Vec<Range<u
     Ok(matches)
 }
 
-fn regex_matches(text: &str, pattern: &str, group: Option<&str>, spec: &Spec) -> Result<Vec<Range<usize>>> {
+fn regex_matches(
+    text: &str,
+    pattern: &str,
+    group: Option<&str>,
+    spec: &Spec,
+) -> Result<Vec<Range<usize>>> {
     let re = compile(pattern, spec)?;
     let index = match group {
         None => 0,
         Some(value) => {
             if let Ok(index) = value.parse::<usize>() {
                 if index >= re.captures_len() {
-                    return Err(Error::new("INVALID_GROUP", 4, "The regex capture group does not exist."));
+                    return Err(Error::new(
+                        "INVALID_GROUP",
+                        4,
+                        "The regex capture group does not exist.",
+                    ));
                 }
                 index
             } else {
-                re.capture_names().position(|name| name == Some(value))
-                    .ok_or_else(|| Error::new("INVALID_GROUP", 4, "The named regex capture group does not exist."))?
+                re.capture_names()
+                    .position(|name| name == Some(value))
+                    .ok_or_else(|| {
+                        Error::new(
+                            "INVALID_GROUP",
+                            4,
+                            "The named regex capture group does not exist.",
+                        )
+                    })?
             }
         }
     };
@@ -147,7 +183,11 @@ fn regex_matches(text: &str, pattern: &str, group: Option<&str>, spec: &Spec) ->
     // Regex matches follow the regex crate's leftmost, non-overlapping semantics.
     for (seen, captures) in re.captures_iter(text).enumerate() {
         if seen >= MAX_MATCHES {
-            return Err(Error::new("MATCH_LIMIT", 9, "Too many regex matches; narrow the search with --within."));
+            return Err(Error::new(
+                "MATCH_LIMIT",
+                9,
+                "Too many regex matches; narrow the search with --within.",
+            ));
         }
         if let Some(matched) = captures.get(index) {
             push_match(&mut matches, matched.range())?;
@@ -160,9 +200,15 @@ fn marker_matches(text: &str, spec: &Spec) -> Result<Vec<Range<usize>>> {
     let start = spec.from.as_deref().unwrap_or_default();
     let end = spec.to.as_deref().unwrap_or_default();
     let (starts, ends) = if spec.markers_regex {
-        (regex_matches(text, start, None, spec)?, regex_matches(text, end, None, spec)?)
+        (
+            regex_matches(text, start, None, spec)?,
+            regex_matches(text, end, None, spec)?,
+        )
     } else {
-        (literal_matches(text, start, spec)?, literal_matches(text, end, spec)?)
+        (
+            literal_matches(text, start, spec)?,
+            literal_matches(text, end, spec)?,
+        )
     };
     if starts.is_empty() {
         return Err(Error::new("NO_MATCH", 2, "The start marker was not found.")
@@ -173,41 +219,66 @@ fn marker_matches(text: &str, spec: &Spec) -> Result<Vec<Range<usize>>> {
         // Defined semantics: each start pairs with its nearest non-overlapping following end.
         let end_index = ends.partition_point(|end| end.start < start.end);
         if let Some(end) = ends.get(end_index) {
-            let left = if spec.exclude_markers || spec.exclude_start { start.end } else { start.start };
-            let right = if spec.exclude_markers || spec.exclude_end { end.start } else { end.end };
+            let left = if spec.exclude_markers || spec.exclude_start {
+                start.end
+            } else {
+                start.start
+            };
+            let right = if spec.exclude_markers || spec.exclude_end {
+                end.start
+            } else {
+                end.end
+            };
             let range = left..right;
             push_match(&mut ranges, range)?;
         }
     }
     if ranges.is_empty() {
-        return Err(Error::new("NO_MATCH", 2, "No end marker follows a start marker.")
-            .details(json!({"reason": "END_MARKER_NOT_FOUND"})));
+        return Err(
+            Error::new("NO_MATCH", 2, "No end marker follows a start marker.")
+                .details(json!({"reason": "END_MARKER_NOT_FOUND"})),
+        );
     }
     Ok(ranges)
 }
 
 fn validate(spec: &Spec) -> Result<()> {
-    let selectors = [spec.lines.is_some(), spec.text.is_some(), spec.regex.is_some(), spec.from.is_some()];
+    let selectors = [
+        spec.lines.is_some(),
+        spec.text.is_some(),
+        spec.regex.is_some(),
+        spec.from.is_some(),
+    ];
     if selectors.into_iter().filter(|x| *x).count() > 1 {
-        return Err(Error::invalid("Choose only one of --lines, --text, --regex, or --from/--to."));
+        return Err(Error::invalid(
+            "Choose only one of --lines, --text, --regex, or --from/--to.",
+        ));
     }
     if spec.from.is_some() != spec.to.is_some() {
         return Err(Error::invalid("--from and --to must be used together."));
     }
-    if (spec.markers_regex || spec.exclude_markers || spec.exclude_start || spec.exclude_end) && spec.from.is_none() {
+    if (spec.markers_regex || spec.exclude_markers || spec.exclude_start || spec.exclude_end)
+        && spec.from.is_none()
+    {
         return Err(Error::invalid("Marker options require --from and --to."));
     }
     if spec.exclude_markers && (spec.exclude_start || spec.exclude_end) {
-        return Err(Error::invalid("--exclude-markers cannot be combined with independent boundary options."));
+        return Err(Error::invalid(
+            "--exclude-markers cannot be combined with independent boundary options.",
+        ));
     }
     if spec.group.is_some() && spec.regex.is_none() {
         return Err(Error::invalid("--group requires --regex."));
     }
     if (spec.multiline || spec.dotall) && spec.regex.is_none() && !spec.markers_regex {
-        return Err(Error::invalid("--multiline and --dotall require a regex selector."));
+        return Err(Error::invalid(
+            "--multiline and --dotall require a regex selector.",
+        ));
     }
     if spec.ignore_case && spec.text.is_none() && spec.regex.is_none() && spec.from.is_none() {
-        return Err(Error::invalid("--ignore-case requires a text, regex, or marker selector."));
+        return Err(Error::invalid(
+            "--ignore-case requires a text, regex, or marker selector.",
+        ));
     }
     if spec.occurrence == Some(0) {
         return Err(Error::invalid("--occurrence starts at 1."));
@@ -234,11 +305,20 @@ pub fn preview(data: &[u8], spec: &Spec) -> Result<Preview> {
         let (local, kind) = if let Some(pattern) = &spec.text {
             (literal_matches(text, pattern, spec)?, "text")
         } else if let Some(pattern) = &spec.regex {
-            (regex_matches(text, pattern, spec.group.as_deref(), spec)?, "regex")
+            (
+                regex_matches(text, pattern, spec.group.as_deref(), spec)?,
+                "regex",
+            )
         } else {
             (marker_matches(text, spec)?, "markers")
         };
-        (local.into_iter().map(|r| r.start + scope.start..r.end + scope.start).collect::<Vec<_>>(), kind)
+        (
+            local
+                .into_iter()
+                .map(|r| r.start + scope.start..r.end + scope.start)
+                .collect::<Vec<_>>(),
+            kind,
+        )
     } else {
         (vec![scope.clone()], "whole")
     };
@@ -247,19 +327,43 @@ pub fn preview(data: &[u8], spec: &Spec) -> Result<Preview> {
         ranges.retain(|r| {
             let first_line = starts.partition_point(|&s| s <= r.start).saturating_sub(1);
             let last_line = starts.partition_point(|&s| s < r.end).saturating_sub(1);
-            let left = starts.get(first_line.saturating_sub(spec.context_lines)).copied().unwrap_or(0).max(scope.start);
-            let right = starts.get(last_line.saturating_add(spec.context_lines).saturating_add(1)).copied().unwrap_or(data.len()).min(scope.end);
+            let left = starts
+                .get(first_line.saturating_sub(spec.context_lines))
+                .copied()
+                .unwrap_or(0)
+                .max(scope.start);
+            let right = starts
+                .get(
+                    last_line
+                        .saturating_add(spec.context_lines)
+                        .saturating_add(1),
+                )
+                .copied()
+                .unwrap_or(data.len())
+                .min(scope.end);
             let contains = |bytes: &[u8], pattern: &Option<String>| {
-                pattern.as_ref().is_none_or(|p| bytes.windows(p.len()).any(|window| window == p.as_bytes()))
+                pattern
+                    .as_ref()
+                    .is_none_or(|p| bytes.windows(p.len()).any(|window| window == p.as_bytes()))
             };
-            contains(&data[left..r.start], &spec.before) && contains(&data[r.end..right], &spec.after)
+            contains(&data[left..r.start], &spec.before)
+                && contains(&data[r.end..right], &spec.after)
         });
     }
     if ranges.is_empty() {
-        return Err(Error::new("NO_MATCH", 2, "No content satisfies the selector and context filters."));
+        return Err(Error::new(
+            "NO_MATCH",
+            2,
+            "No content satisfies the selector and context filters.",
+        ));
     }
     let match_count = ranges.len();
-    let candidates = ranges.iter().take(MAX_CANDIDATES).cloned().map(|r| describe(r, &starts, kind)).collect();
+    let candidates = ranges
+        .iter()
+        .take(MAX_CANDIDATES)
+        .cloned()
+        .map(|r| describe(r, &starts, kind))
+        .collect();
     let selected = if let Some(occurrence) = spec.occurrence {
         ranges.get(occurrence - 1).cloned().ok_or_else(|| {
             Error::new("NO_MATCH", 2, "The requested occurrence does not exist.")
@@ -275,9 +379,18 @@ pub fn preview(data: &[u8], spec: &Spec) -> Result<Preview> {
             .details(json!({"match_count": ranges.len(), "candidates": candidates, "truncated": ranges.len() > MAX_CANDIDATES})));
     };
     if selected.is_empty() {
-        return Err(Error::new("EMPTY_SELECTION", 8, "The selected content is empty."));
+        return Err(Error::new(
+            "EMPTY_SELECTION",
+            8,
+            "The selected content is empty.",
+        ));
     }
-    Ok(Preview { match_count, candidates, truncated: match_count > MAX_CANDIDATES, selected: describe(selected, &starts, kind) })
+    Ok(Preview {
+        match_count,
+        candidates,
+        truncated: match_count > MAX_CANDIDATES,
+        selected: describe(selected, &starts, kind),
+    })
 }
 
 #[derive(Debug, Serialize)]

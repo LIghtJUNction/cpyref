@@ -1,5 +1,10 @@
 use serde_json::Value;
-use std::{fs, io::Write, path::PathBuf, process::{Command, Output, Stdio}};
+use std::{
+    fs,
+    io::Write,
+    path::PathBuf,
+    process::{Command, Output, Stdio},
+};
 use tempfile::TempDir;
 
 struct Fixture {
@@ -8,13 +13,22 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        Self { dir: tempfile::tempdir().unwrap() }
+        Self {
+            dir: tempfile::tempdir().unwrap(),
+        }
     }
 
     fn command(&self) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_cpyref"));
-        command.current_dir(self.dir.path()).env("CPYREF_STORE", self.dir.path().join("store"));
-        for key in ["CPYREF_SCOPE", "CPYREF_NAMESPACE", "CPYREF_PROJECT", "CPYREF_CONFIG"] {
+        command
+            .current_dir(self.dir.path())
+            .env("CPYREF_STORE", self.dir.path().join("store"));
+        for key in [
+            "CPYREF_SCOPE",
+            "CPYREF_NAMESPACE",
+            "CPYREF_PROJECT",
+            "CPYREF_CONFIG",
+        ] {
             command.env_remove(key);
         }
         command.env("CPYREF_NO_CONFIG", "true");
@@ -27,7 +41,11 @@ impl Fixture {
 
     fn store_path(&self) -> PathBuf {
         let output = self.run(&["context"]);
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         let context: Value = serde_json::from_slice(&output.stdout).unwrap();
         PathBuf::from(context["store_path"].as_str().unwrap())
     }
@@ -37,7 +55,11 @@ impl Fixture {
         let mut args = vec!["copy", "input"];
         args.extend_from_slice(extra);
         let output = self.run(&args);
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         assert!(output.stderr.is_empty());
         let id = String::from_utf8(output.stdout).unwrap();
         assert!(id.ends_with('\n'));
@@ -49,7 +71,12 @@ impl Fixture {
 }
 
 fn failure(output: Output, exit: i32, code: &str) -> Value {
-    assert_eq!(output.status.code(), Some(exit), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(exit),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(output.stdout.is_empty());
     let error: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["ok"], false);
@@ -102,7 +129,11 @@ fn missing_file_is_not_a_no_match() {
 fn parser_errors_use_json_and_distinct_exit_code() {
     let f = Fixture::new();
     failure(f.run(&["copy"]), 4, "INVALID_ARGUMENT");
-    failure(f.run(&["paste", "anything", "--force"]), 4, "INVALID_ARGUMENT");
+    failure(
+        f.run(&["paste", "anything", "--force"]),
+        4,
+        "INVALID_ARGUMENT",
+    );
 }
 
 #[test]
@@ -125,10 +156,26 @@ fn json_success_and_info_do_not_expand_payload() {
 #[test]
 fn stdin_preserves_raw_bytes() {
     let f = Fixture::new();
-    let mut child = f.command().args(["copy", "-"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
-    child.stdin.take().unwrap().write_all(b"from stdin\r\n\0").unwrap();
+    let mut child = f
+        .command()
+        .args(["copy", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"from stdin\r\n\0")
+        .unwrap();
     let result = child.wait_with_output().unwrap();
-    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     let id = String::from_utf8(result.stdout).unwrap();
     assert_eq!(f.run(&["paste", id.trim()]).stdout, b"from stdin\r\n\0");
 }
@@ -138,12 +185,19 @@ fn output_is_not_overwritten_without_force() {
     let f = Fixture::new();
     let id = f.copy(b"replacement", &[]);
     fs::write(f.dir.path().join("output"), b"existing").unwrap();
-    failure(f.run(&["paste", &id, "--output", "output"]), 5, "OUTPUT_EXISTS");
+    failure(
+        f.run(&["paste", &id, "--output", "output"]),
+        5,
+        "OUTPUT_EXISTS",
+    );
     assert_eq!(fs::read(f.dir.path().join("output")).unwrap(), b"existing");
     let result = f.run(&["paste", &id, "--output", "output", "--force"]);
     assert!(result.status.success());
     assert!(result.stdout.is_empty());
-    assert_eq!(fs::read(f.dir.path().join("output")).unwrap(), b"replacement");
+    assert_eq!(
+        fs::read(f.dir.path().join("output")).unwrap(),
+        b"replacement"
+    );
 }
 
 #[test]
@@ -165,7 +219,11 @@ fn truncated_and_appended_records_are_rejected() {
         let id = f.copy(b"payload", &[]);
         let path = f.store_path().join(format!("{id}.ref"));
         let mut bytes = fs::read(&path).unwrap();
-        if append { bytes.push(0); } else { bytes.truncate(4); }
+        if append {
+            bytes.push(0);
+        } else {
+            bytes.truncate(4);
+        }
         fs::write(path, bytes).unwrap();
         failure(f.run(&["paste", &id]), 7, "CORRUPT_REF");
     }
@@ -175,7 +233,11 @@ fn truncated_and_appended_records_are_rejected() {
 fn input_limit_prevents_snapshot_creation() {
     let f = Fixture::new();
     fs::write(f.dir.path().join("input"), b"12345").unwrap();
-    failure(f.run(&["copy", "input", "--max-bytes", "4"]), 9, "SIZE_LIMIT");
+    failure(
+        f.run(&["copy", "input", "--max-bytes", "4"]),
+        9,
+        "SIZE_LIMIT",
+    );
     assert!(!f.dir.path().join("store").exists());
 }
 
@@ -202,13 +264,24 @@ fn removal_only_affects_the_requested_reference() {
 fn concurrent_processes_publish_complete_distinct_snapshots() {
     let f = Fixture::new();
     fs::write(f.dir.path().join("input"), b"parallel payload\r\n").unwrap();
-    let children: Vec<_> = (0..12).map(|_| {
-        f.command().args(["copy", "input"]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap()
-    }).collect();
+    let children: Vec<_> = (0..12)
+        .map(|_| {
+            f.command()
+                .args(["copy", "input"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap()
+        })
+        .collect();
     let mut ids = std::collections::HashSet::new();
     for child in children {
         let result = child.wait_with_output().unwrap();
-        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
         let id = String::from_utf8(result.stdout).unwrap().trim().to_owned();
         assert!(ids.insert(id.clone()));
         assert_eq!(f.run(&["paste", &id]).stdout, b"parallel payload\r\n");
@@ -232,9 +305,15 @@ fn store_has_private_permissions_and_rejects_symlinks() {
     let f = Fixture::new();
     let id = f.copy(b"private", &[]);
     let store = f.store_path();
-    assert_eq!(fs::metadata(&store).unwrap().permissions().mode() & 0o777, 0o700);
+    assert_eq!(
+        fs::metadata(&store).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
     let path = store.join(format!("{id}.ref"));
-    assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
     fs::remove_file(&path).unwrap();
     symlink(f.dir.path().join("input"), &path).unwrap();
     failure(f.run(&["paste", &id]), 7, "CORRUPT_REF");
@@ -249,6 +328,10 @@ fn output_symlink_is_not_followed_even_with_force() {
     let target = f.dir.path().join("target");
     fs::write(&target, b"protected").unwrap();
     symlink(&target, f.dir.path().join("output")).unwrap();
-    failure(f.run(&["paste", &id, "--output", "output", "--force"]), 5, "UNSAFE_OUTPUT");
+    failure(
+        f.run(&["paste", &id, "--output", "output", "--force"]),
+        5,
+        "UNSAFE_OUTPUT",
+    );
     assert_eq!(fs::read(target).unwrap(), b"protected");
 }

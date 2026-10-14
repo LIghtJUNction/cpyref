@@ -3,7 +3,10 @@ use cpyref::{context::Options, select::Spec, DEFAULT_MAX_BYTES};
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(version, about = "Copy exact bytes once. Paste them by a short reference.")]
+#[command(
+    version,
+    about = "Copy exact bytes once. Paste them by a short reference."
+)]
 pub struct Cli {
     #[command(flatten)]
     pub context: Options,

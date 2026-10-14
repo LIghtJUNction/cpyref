@@ -16,7 +16,12 @@ pub struct Error {
 
 impl Error {
     pub fn new(code: &'static str, exit: u8, message: impl Into<String>) -> Self {
-        Self { code, message: message.into(), details: json!({}), exit }
+        Self {
+            code,
+            message: message.into(),
+            details: json!({}),
+            exit,
+        }
     }
 
     pub fn details(mut self, details: Value) -> Self {
