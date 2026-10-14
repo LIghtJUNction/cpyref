@@ -15,6 +15,21 @@ BINARY = Path(os.environ.get("CPYREF_BIN", ROOT / "target" / "debug" / ("cpyref.
 
 @unittest.skipUnless(BINARY.is_file(), "Build cpyref first, or set CPYREF_BIN")
 class HardeningTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX pseudo terminal required")
+    def test_implicit_copy_on_terminal_fails_without_waiting(self):
+        import pty
+        master, slave = pty.openpty()
+        try:
+            result = subprocess.run([str(BINARY), "copy"], cwd=self.root, env=self.env,
+                                    stdin=slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3)
+        finally:
+            os.close(master)
+            os.close(slave)
+        self.assertEqual(result.returncode, 4)
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(json.loads(result.stderr)["error"]["code"], "INVALID_ARGUMENT")
+        self.assertFalse((self.root / "store").exists())
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="cpyref-check-")
         self.addCleanup(self.temp.cleanup)

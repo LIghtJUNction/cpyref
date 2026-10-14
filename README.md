@@ -9,6 +9,7 @@
 ## 开发版本
 
 当前开发分支面向 0.3.0，新增带目标哈希前置条件的 `insert` / `replace` 和写入前 `--redact-env` 脱敏。
+完整引用 `handoff --format ref` / `receive` 自动携带空间和 SHA-256；`bundle` 将补丁、说明和测试收据按名称交接。见[交接用法](docs/workflows.md)。
 运行上限、磁盘余量检查和进程清理沿用并保留 0.2.2 主分支实现。新功能用法见[安全写入与运行限制](docs/hardening.md)。
 开发分支不代表已发布新安装包。
 
@@ -47,7 +48,12 @@ cpyref copy config.txt --text 'timeout = 30'
 
 # 直接保存工具输出
 some-command | cpyref copy -
+
+# 管道输入也可以省略 -，支持原始二进制字节
+cat file.txt | cpyref copy --note 'piped input'
 ```
+
+一次性的本地文件复制通常直接用 `cp` 更省步骤。cpyref 适合复用、交接、保留测试日志和检查原文；使用引用本身不保证减少 Token。
 
 复制成功时，stdout 只有一行短编号：
 

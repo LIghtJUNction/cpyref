@@ -16,6 +16,22 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Restore a complete handoff reference, ignoring local context settings; verify its hash first.
+    Receive {
+        token: String,
+        /// Select one named item when receiving a bundle.
+        #[arg(long)]
+        item: Option<String>,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[arg(long, requires = "output")]
+        force: bool,
+    },
+    /// Group existing references into an immutable named handoff package.
+    Bundle {
+        #[command(subcommand)]
+        command: BundleCommand,
+    },
     /// Insert saved bytes at one explicit target position. Writing requires a target hash.
     Insert(Box<cpyref::edit::Args>),
     /// Replace a unique target selection with saved bytes. Writing requires a target hash.
@@ -55,7 +71,7 @@ pub enum Command {
     /// Generate a complete same-host retrieval command or structured handoff.
     Handoff {
         id: String,
-        #[arg(long, default_value = "json", value_parser = ["json", "sh", "powershell"])]
+        #[arg(long, default_value = "json", value_parser = ["json", "ref", "sh", "powershell"])]
         format: String,
     },
     /// Save a unique selection; print only its short reference by default.
@@ -132,6 +148,38 @@ pub enum Command {
     },
 }
 
+#[derive(Debug, Subcommand)]
+pub enum BundleCommand {
+    /// Save NAME=REF entries without duplicating their contents; print a short reference.
+    Create {
+        #[arg(required = true, num_args = 1..=100)]
+        items: Vec<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a bounded item index without reading item payloads.
+    Show {
+        id: String,
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=100))]
+        limit: u32,
+    },
+    /// Read just one item. Bytes are bounded JSON by default; --output exports exact bytes.
+    Read {
+        id: String,
+        name: String,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value_t = 4096, value_parser = clap::value_parser!(u32).range(1..=65536))]
+        max_bytes: u32,
+        #[arg(short, long, conflicts_with_all = ["offset", "max_bytes"])]
+        output: Option<PathBuf>,
+        #[arg(long, requires = "output")]
+        force: bool,
+    },
+}
+
 #[derive(Debug, Args)]
 pub struct FilterArgs {
     /// Case-sensitive substring of the recorded source path.
@@ -144,8 +192,8 @@ pub struct FilterArgs {
 
 #[derive(Debug, Args)]
 pub struct CopyArgs {
-    /// Input file, or - to read bytes from stdin. No selector means the whole input.
-    pub source: PathBuf,
+    /// Input file, or - for stdin. Omit the source when piping input. No selector means all bytes.
+    pub source: Option<PathBuf>,
     /// One-based inclusive lines: N or START:END. Original line endings are retained.
     #[arg(long)]
     pub lines: Option<String>,

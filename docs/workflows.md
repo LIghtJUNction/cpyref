@@ -121,21 +121,52 @@ cpyref verify REF
 
 文件其他部分变化不会自动使片段失效；也不只凭行号或修改时间判定。所有状态都返回 `semantic_position_verified=false`：字节仍存在不证明仍在原来的函数、作用域或语义位置。局部插入和替换由 insert/replace 提供，要求明确目标哈希，见 hardening.md；paste --force 仍为整文件输出。
 
-## 一条命令交接引用
+## 完整交接引用
 
 ```sh
-cpyref handoff REF
-cpyref handoff REF --format sh
-cpyref handoff REF --format powershell
+handoff=$(cpyref handoff "$ref" --format ref)
+cpyref receive "$handoff" --output restored.bin
+# 也可生成完整 JSON 或可复制的命令
+cpyref handoff "$ref"
+cpyref handoff "$ref" --format sh
+cpyref handoff "$ref" --format powershell
 ```
 
-默认 JSON 包括完整 ID、上下文、工作目录、argv、需要清除的继承环境项，以及 same_host 标记。sh / powershell 模式直接输出一条正确引用路径的检索命令：bytes 用 paste，snapshot 用 snapshot show，run 用 logs。命令固定 no-config、存储基目录、scope、namespace、项目根和保存上限，清除可能与显式参数冲突的 CPYREF_CONFIG / CPYREF_PROJECT；shell 模式还固定工作目录，并使用当前运行的 cpyref 可执行文件绝对路径，避免 PATH 上的旧版本接手；不会把备注或来源正文拼进命令。
+`--format ref` 输出一行 `cpyref:v1:` 完整引用，正文为紧凑 JSON。它包含项目、scope、namespace、store、cwd、ID、记录类型和 SHA-256，不包含保存的正文。默认 JSON 也返回 `token` 和 `sha256`。创建交接前先验证完整记录。
 
-这不是数据传输或远程同步。接收者必须在同机访问同一存储，并有兼容版本的 cpyref；不要仅因为 ID 相同就猜测另一台机器存在同一份内容。生成命令本身只读、不执行该命令、不修改配置。
+`receive` 使用引用内指定的空间，忽略本地上下文配置及默认值，先验证保存内容、交接时固定的 hash 和 type，再输出。hash 不符报 `HASH_MISMATCH`，不会先创建输出。输出路径相对于接收方当前目录；已有文件默认受保护，授权覆盖时加 `--force`。bytes 不加换行；run 显示摘要，snapshot 显示清单概要，bundle 显示最多 20 项的目录。不会执行记录中的命令或应用补丁。
+
+sh / powershell 模式输出正确引用 token 的 receive 命令，固定上下文并清除可能冲突的 CPYREF_CONFIG / CPYREF_PROJECT，使用当前 cpyref 的绝对路径。通过程序调用应传 argv 数组，通过 shell 传递 token 要引用整个变量。引用是数据，不执行其 JSON 字段。
+
+这是同机交接，不是数据传输或远程同步。接收方必须有兼容版本、能访问同一 store；目录作用域需要原 cwd 存在，项目作用域需要原项目根存在。不扫描其他空间，不自动迁移记录。完整引用含本地路径，只接收任务授权访问的引用。hash 固定内容，不认证发送者身份。
+
+## 批量交接包
+
+```sh
+patch=$(cpyref copy change.patch)
+notes=$(cpyref copy handoff.md)
+# tests 使用先前 cpyref run 返回的实际引用
+package=$(cpyref bundle create "patch=$patch" "notes=$notes" "tests=$tests")
+cpyref bundle show "$package"             # 只有目录，没有正文
+cpyref bundle read "$package" notes       # 默认最多 4096 字节
+cpyref bundle read "$package" notes --offset 4096 --max-bytes 4096
+cpyref bundle read "$package" patch --output review.patch
+cpyref bundle read "$package" tests       # 只显示该测试收据摘要
+
+handoff=$(cpyref handoff "$package" --format ref)
+cpyref receive "$handoff"                 # 接收方看目录
+cpyref receive "$handoff" --item patch --output received.patch
+```
+
+包是不可变的命名清单，每项固定 ID、hash、type 和字节数，正文只存一份。每包 1–100 项，名称为 1–64 个 ASCII 字母、数字、`_`、`.`、`-`，以字母或数字开头，不得重复。创建时所有引用须在当前同一空间，并验证完整内容。默认只输出短 ID，`--json` 返回元数据和空间。
+
+`bundle show --limit 20 --offset 0` 分页显示目录，不读取条目正文。`bundle read` 只验证、读取所选项：bytes 返回有 `truncated`、`next_offset` 的有界 JSON（UTF-8 有损显示），需要原始字节时使用 `--output`；已有输出文件受保护。run/snapshot/bundle 只显示摘要或目录，更多视图使用所选 ID 的 logs/snapshot/bundle 命令；类型化条目不能用 `--output` 导出普通文本。不存在的名称报 `ITEM_NOT_FOUND`。嵌套包按需展开一层，不递归展开全部正文。
+
+包占一个保存名额，声明对每项的依赖。包仍存在时 remove/clean 拒绝删除其依赖；删除包不会级联删除各项。可以在同一次明确的清理预览中选择包和各项。
 
 ## 保留与清理
 
-bytes、snapshot、run 共用短编号、list、stats、max_entries 和 clean。info 新增 kind（旧 bytes 记录可省略）及 dependencies。run 的两路日志与描述在同一个文件内，不会出现删掉日志却保留空测试摘要的情况。
+bytes、snapshot、run、bundle 共用短编号、list、stats、max_entries 和 clean。info 新增 kind（旧 bytes 记录可省略）及 dependencies。run 的两路日志与描述在同一个文件内，不会出现删掉日志却保留空测试摘要的情况。
 
 关联独立 source snapshot 的 run 会声明依赖。remove/clean 不允许删除仍被保留记录依赖的快照，预览就报 REF_IN_USE；可以显式将依赖者和快照一起选入同一批次，工具按依赖顺序删除，不自动级联扩大范围。执行前在写锁内再次检查依赖，避免预览后新记录出现造成悬空引用。批量删除仍可能因文件系统错误部分成功，removed 字段列出已删项。
 

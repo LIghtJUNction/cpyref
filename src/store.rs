@@ -25,6 +25,7 @@ pub enum RecordKind {
     Bytes,
     Snapshot,
     Run,
+    Bundle,
 }
 
 impl RecordKind {
@@ -333,6 +334,7 @@ impl Store {
         let sha256 = hash_reader(file)?;
         let selector = match kind {
             RecordKind::Run => "run",
+            RecordKind::Bundle => "bundle",
             _ => "snapshot",
         };
         let span = Span {

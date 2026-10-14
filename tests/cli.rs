@@ -128,7 +128,7 @@ fn missing_file_is_not_a_no_match() {
 #[test]
 fn parser_errors_use_json_and_distinct_exit_code() {
     let f = Fixture::new();
-    failure(f.run(&["copy"]), 4, "INVALID_ARGUMENT");
+    failure(f.run(&["copy", "--unknown-option"]), 4, "INVALID_ARGUMENT");
     failure(
         f.run(&["paste", "anything", "--force"]),
         4,
@@ -178,6 +178,48 @@ fn stdin_preserves_raw_bytes() {
     );
     let id = String::from_utf8(result.stdout).unwrap();
     assert_eq!(f.run(&["paste", id.trim()]).stdout, b"from stdin\r\n\0");
+}
+
+#[test]
+fn implicit_piped_input_supports_binary_selection_notes_and_preview() {
+    let f = Fixture::new();
+    let pipe = |args: &[&str], bytes: &[u8]| {
+        let mut child = f
+            .command()
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(bytes).unwrap();
+        child.wait_with_output().unwrap()
+    };
+    let preview = pipe(
+        &["copy", "--lines", "2:2", "--dry-run"],
+        b"one\r\n\xff\0two\r\nend",
+    );
+    assert!(preview.status.success());
+    assert!(!f.dir.path().join("store").exists());
+    let out = pipe(
+        &["copy", "--lines", "2:2", "--note", "piped"],
+        b"one\r\n\xff\0two\r\nend",
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let id = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(f.run(&["paste", id.trim()]).stdout, b"\xff\0two\r\n");
+    let info: Value = serde_json::from_slice(&f.run(&["info", id.trim()]).stdout).unwrap();
+    assert_eq!(info["source"], "<stdin>");
+    assert_eq!(info["note"], "piped");
+    let empty = pipe(&["copy"], b"");
+    assert!(!empty.status.success());
+    assert!(empty.stdout.is_empty());
+    let error: Value = serde_json::from_slice(&empty.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "EMPTY_SELECTION");
 }
 
 #[test]

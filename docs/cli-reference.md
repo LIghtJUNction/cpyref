@@ -2,6 +2,15 @@
 
 安装与常用操作见 [README](../README.md)，空间配置见[项目隔离与多 Agent 协作](project-spaces.md)。
 
+## 管道输入
+
+```sh
+cat file.txt | cpyref copy
+producer | cpyref copy --lines 2:10 --note 'piped selection'
+```
+
+省略来源时读取管道中的原始字节，与显式 `copy -` 相同，支持二进制、选区、备注及 dry-run。不加换行；空输入不生成引用。直接在终端运行无参数 `copy` 会立即报错，避免等待输入。需要交互 stdin 时显式使用 `copy -`。来源记录为 `<stdin>`，后续 verify 无法核对原文件。Bash/Zsh 需保留上游命令失败时，先设置 `set -o pipefail`。
+
 ## 复杂匹配
 
 ### 正则与分组

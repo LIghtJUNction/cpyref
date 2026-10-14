@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     fs::File,
-    io::{self, Read, Write},
+    io::{self, IsTerminal, Read, Write},
     path::Path,
     process::ExitCode,
 };
@@ -92,7 +92,12 @@ fn execute(command: Command, context: &Context) -> Result<()> {
         Command::Insert(args) => print_json(&cpyref::edit::execute(context, &args, false)?),
         Command::Replace(args) => print_json(&cpyref::edit::execute(context, &args, true)?),
         Command::Copy(args) => {
-            let data = read_input(&args.source, args.max_bytes)?;
+            let source_path = match args.source.as_deref() {
+                Some(path) => path,
+                None if !io::stdin().is_terminal() => Path::new("-"),
+                None => return Err(Error::invalid("Provide an input file or pipe bytes into cpyref copy. Use copy - for explicit interactive stdin.")),
+            };
+            let data = read_input(source_path, args.max_bytes)?;
             let preview = preview(&data, &args.spec())?;
             if args.dry_run {
                 let span = &preview.selected;
@@ -111,15 +116,11 @@ fn execute(command: Command, context: &Context) -> Result<()> {
             }
             let span = preview.selected;
             let range = span.range();
-            let source = if args.source == Path::new("-") {
+            let source = if source_path == Path::new("-") {
                 "<stdin>".to_owned()
             } else {
                 // The selected project does not change where relative input paths are opened.
-                context
-                    .cwd
-                    .join(&args.source)
-                    .to_string_lossy()
-                    .into_owned()
+                context.cwd.join(source_path).to_string_lossy().into_owned()
             };
             let metadata = store.put_with_options(
                 &data[range],
@@ -371,12 +372,28 @@ fn execute(command: Command, context: &Context) -> Result<()> {
 }
 
 fn run(cli: Cli) -> Result<u8> {
+    if let Command::Receive {
+        token,
+        item,
+        output,
+        force,
+    } = cli.command
+    {
+        let (context, mut metadata) = cpyref::handoff::receive(&token)?;
+        if let Some(name) = item {
+            metadata = cpyref::bundle::item(&context.store()?, &metadata.id, &name)
+                .map_err(|e| context.annotate(e))?;
+        }
+        return workflows::receive_record(&context, metadata, output, force)
+            .map_err(|e| context.annotate(e));
+    }
     let context = Context::resolve(&cli.context)?;
     let result = match cli.command {
         command @ (Command::Run(_)
         | Command::Logs { .. }
         | Command::Snapshot(_)
         | Command::Verify { .. }
+        | Command::Bundle { .. }
         | Command::Handoff { .. }) => workflows::execute(command, &context),
         command => execute(command, &context).map(|_| 0),
     };

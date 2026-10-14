@@ -1,13 +1,14 @@
 use crate::{
-    cli::{Command, SnapshotCommand},
+    cli::{BundleCommand, Command, SnapshotCommand},
     print_json,
 };
 use cpyref::{
+    bundle,
     context::Context,
     error::{Error, Result},
     handoff, runner,
     snapshot::{self, Change},
-    store::write_stream_output,
+    store::{write_stream_output, Metadata, RecordKind},
     verify,
 };
 use serde_json::{json, Value};
@@ -22,9 +23,136 @@ fn change_report(changes: &[Change], offset: usize, limit: usize) -> Value {
         "semantic_position_verified": false})
 }
 
+fn show_bundle(context: &Context, id: &str, offset: usize, limit: usize) -> Result<()> {
+    let manifest = bundle::load(&context.store()?, id)?;
+    let items: Vec<_> = manifest
+        .items
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .map(|(name, item)| {
+            json!({"name": name, "reference": item.reference, "kind": item.kind,
+            "bytes": item.bytes, "sha256": item.sha256})
+        })
+        .collect();
+    print_json(
+        &json!({"reference": id, "kind": "bundle", "item_count": manifest.items.len(),
+        "items": items, "offset": offset, "omitted": manifest.items.len().saturating_sub(offset).saturating_sub(items.len())}),
+    )
+}
+
+/// Receiving never executes stored commands or applies patches.
+pub fn receive_record(
+    context: &Context,
+    metadata: Metadata,
+    output: Option<std::path::PathBuf>,
+    force: bool,
+) -> Result<u8> {
+    if metadata.kind == RecordKind::Bytes {
+        let (mut file, actual) = context.store()?.verified_file(&metadata.id)?;
+        if actual.sha256 != metadata.sha256 || actual.kind != metadata.kind {
+            return Err(Error::new(
+                "HASH_MISMATCH",
+                7,
+                "Record changed before restoration.",
+            ));
+        }
+        if let Some(path) = output {
+            write_stream_output(&path, &mut file, force)?;
+        } else {
+            std::io::copy(&mut file, &mut std::io::stdout().lock())
+                .map_err(|e| Error::io("Write received bytes", e))?;
+        }
+    } else {
+        if output.is_some() {
+            return Err(Error::invalid("--output is only for byte references; select a byte item or use the typed export command."));
+        }
+        match metadata.kind {
+            RecordKind::Bundle => show_bundle(context, &metadata.id, 0, 20)?,
+            RecordKind::Run => {
+                let loaded = runner::load(&context.store()?, &metadata.id)?;
+                print_json(&runner::summary(&metadata.id, &loaded.record))?;
+            }
+            RecordKind::Snapshot => {
+                let manifest = snapshot::load(&context.store()?, &metadata.id)?;
+                print_json(
+                    &json!({"reference": metadata.id, "kind": "snapshot", "root": manifest.root,
+                    "file_count": manifest.files.len(), "content_saved": false, "sha256": metadata.sha256}),
+                )?;
+            }
+            RecordKind::Bytes => unreachable!(),
+        }
+    }
+    Ok(0)
+}
+
 pub fn execute(command: Command, context: &Context) -> Result<u8> {
     let store = context.store()?;
     match command {
+        Command::Bundle { command } => match command {
+            BundleCommand::Create {
+                items,
+                json: as_json,
+            } => {
+                let metadata = bundle::create(context, &items)?;
+                if as_json {
+                    print_json(&json!({"reference": metadata, "context": context.report()}))?;
+                } else {
+                    writeln!(std::io::stdout().lock(), "{}", metadata.id)
+                        .map_err(|e| Error::io("Write bundle reference", e))?;
+                }
+                Ok(0)
+            }
+            BundleCommand::Show { id, offset, limit } => {
+                show_bundle(context, &id, offset, limit as usize)?;
+                Ok(0)
+            }
+            BundleCommand::Read {
+                id,
+                name,
+                offset,
+                max_bytes,
+                output,
+                force,
+            } => {
+                let metadata = bundle::item(&store, &id, &name)?;
+                if metadata.kind != RecordKind::Bytes {
+                    if output.is_some() || offset != 0 || max_bytes != 4096 {
+                        return Err(Error::invalid("Typed items use their bounded summary; use logs/snapshot/bundle commands for additional views."));
+                    }
+                    return receive_record(context, metadata, None, false);
+                }
+                let (mut file, actual) = store.verified_file(&metadata.id)?;
+                if actual.sha256 != metadata.sha256 || actual.kind != metadata.kind {
+                    return Err(Error::new(
+                        "HASH_MISMATCH",
+                        7,
+                        "Bundle item changed before reading.",
+                    ));
+                }
+                if let Some(path) = output {
+                    write_stream_output(&path, &mut file, force)?;
+                    print_json(
+                        &json!({"reference": metadata.id, "item": name, "output": path, "bytes": metadata.bytes, "sha256": metadata.sha256, "complete": true}),
+                    )?;
+                } else {
+                    let offset = offset.min(metadata.bytes as u64);
+                    file.seek(SeekFrom::Current(offset as i64))
+                        .map_err(|e| Error::io("Seek bundle item", e))?;
+                    let mut bytes = Vec::new();
+                    file.take(u64::from(max_bytes))
+                        .read_to_end(&mut bytes)
+                        .map_err(|e| Error::io("Read bundle item", e))?;
+                    print_json(
+                        &json!({"reference": metadata.id, "item": name, "sha256": metadata.sha256,
+                        "offset": offset, "bytes": bytes.len(), "total_bytes": metadata.bytes,
+                        "next_offset": offset + bytes.len() as u64, "truncated": offset + (bytes.len() as u64) < metadata.bytes as u64,
+                        "encoding": "utf-8-lossy", "content": String::from_utf8_lossy(&bytes)}),
+                    )?;
+                }
+                Ok(0)
+            }
+        },
         Command::Run(args) => {
             let options = runner::RunOptions {
                 command: args.command,
@@ -61,7 +189,9 @@ pub fn execute(command: Command, context: &Context) -> Result<u8> {
                 writeln!(
                     std::io::stdout().lock(),
                     "{}",
-                    report["command"].as_str().unwrap_or_default()
+                    report[if format == "ref" { "token" } else { "command" }]
+                        .as_str()
+                        .unwrap_or_default()
                 )
                 .map_err(|e| Error::io("Write handoff command", e))?;
             }
