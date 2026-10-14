@@ -5,7 +5,7 @@ description: Preserve exact bytes for reuse or agent handoff; retain long comman
 
 # cpyref
 
-Use for repeated reuse, agent handoff, or retained logs. For one local copy, prefer `cp` or a direct edit. Do not save a reference just to use it once.
+Check `cpyref --version` once; examples require 0.3.0+. Use for repeated reuse, agent handoff, or retained logs. For one local copy, prefer `cp` or a direct edit. Do not save a reference just to use it once.
 
 - `cpyref copy FILE [--lines A:B] [--note NOTE]` → short ID. Piped input: `producer | cpyref copy`. Preserve producer failures with `set -o pipefail`.
 - `cpyref paste ID --output FILE` restores exact bytes; no added newline. Existing files are protected. Use `--force` only for an authorized overwrite.
