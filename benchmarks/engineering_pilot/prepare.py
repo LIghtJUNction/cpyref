@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import tarfile
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -32,9 +33,23 @@ def main() -> None:
     root = Path(sys.argv[1]).resolve()
     root.mkdir(parents=True, exist_ok=True)
     release = get_json('https://api.github.com/repos/ggml-org/llama.cpp/releases/latest')
+    stable_tag = release['tag_name']
     assets = [a for a in release['assets'] if re.fullmatch(r'llama-.*-bin-ubuntu-x64.tar.gz', a['name'])]
+    if not assets:
+        pointers = [a for a in release['assets'] if a['name'] == 'nightly-tag.txt']
+        if len(pointers) == 1:
+            pointer = root / 'nightly-tag.txt'
+            download(pointers[0]['browser_download_url'], pointer)
+            expected_pointer = pointers[0].get('digest')
+            if expected_pointer and expected_pointer != 'sha256:' + sha(pointer):
+                raise RuntimeError('Official nightly pointer digest mismatch')
+            tag = pointer.read_text().strip().strip('"')
+            if not re.fullmatch(r'[A-Za-z0-9_.-]{1,80}', tag):
+                raise RuntimeError('Invalid official nightly tag')
+            release = get_json('https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/' + urllib.parse.quote(tag, safe=''))
+            assets = [a for a in release['assets'] if re.fullmatch(r'llama-.*-bin-ubuntu-x64.tar.gz', a['name'])]
     if len(assets) != 1:
-        raise RuntimeError('Cannot identify a unique official llama.cpp Ubuntu CPU artifact')
+        raise RuntimeError('Cannot identify a unique official Ubuntu CPU artifact: ' + ', '.join(a['name'] for a in release['assets']))
     asset = assets[0]
     archive = root / asset['name']
     download(asset['browser_download_url'], archive)
@@ -61,7 +76,7 @@ def main() -> None:
     image = subprocess.check_output(['docker', 'image', 'inspect', 'python:3.12-slim', '--format', '{{.Id}}'], text=True).strip()
     manifest = dict(model_repository=REPO, model_revision=revision, model_file=MODEL_FILE,
                     model_sha256=model_sha, model_path=str(model), model_expected_sha256=expected,
-                    llama_tag=release['tag_name'], llama_archive_sha256=artifact_sha,
+                    llama_stable_tag=stable_tag, llama_tag=release['tag_name'], llama_archive_sha256=artifact_sha,
                     llama_archive_expected_digest=asset.get('digest'), server=str(server),
                     docker_image=image, platform=platform.platform(), cpu_count=os.cpu_count(),
                     python=sys.version, model_is_quantized=True,
