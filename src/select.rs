@@ -7,25 +7,60 @@ use std::ops::Range;
 const MAX_MATCHES: usize = 10_000;
 const MAX_CANDIDATES: usize = 20;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, clap::Args)]
 pub struct Spec {
+    /// One-based inclusive lines: N or START:END. Original line endings are retained.
+    #[arg(long)]
     pub lines: Option<String>,
+    /// Match exact text, including overlapping matches.
+    #[arg(long)]
     pub text: Option<String>,
+    /// Match a Rust regex. Matches are leftmost and non-overlapping.
+    #[arg(long)]
     pub regex: Option<String>,
+    /// Start marker; pair with its nearest following end marker.
+    #[arg(long, requires = "to")]
     pub from: Option<String>,
+    #[arg(long, requires = "from")]
     pub to: Option<String>,
+    /// Interpret both markers as regexes instead of literal text.
+    #[arg(long, requires = "from")]
     pub markers_regex: bool,
+    /// Copy only content between the markers, without the markers themselves.
+    #[arg(long, requires = "from")]
     pub exclude_markers: bool,
+    /// Exclude only the start marker (both markers are included by default).
+    #[arg(long, requires = "from", conflicts_with = "exclude_markers")]
     pub exclude_start: bool,
+    /// Exclude only the end marker, keeping the current function declaration.
+    #[arg(long, requires = "from", conflicts_with = "exclude_markers")]
     pub exclude_end: bool,
+    /// Copy a numbered or named regex capture group, not the complete match.
+    #[arg(long, requires = "regex")]
     pub group: Option<String>,
+    /// Restrict all searching to these absolute, one-based inclusive lines.
+    #[arg(long)]
     pub within: Option<String>,
+    /// Require exact, case-sensitive text in the preceding context window.
+    #[arg(long)]
     pub before: Option<String>,
+    /// Require exact, case-sensitive text in the following context window.
+    #[arg(long)]
     pub after: Option<String>,
+    /// Extra lines on each side for context filters, in addition to the same line.
+    #[arg(long, default_value_t = 3)]
     pub context_lines: usize,
+    /// Explicitly select the Nth match after scope and context filtering (starts at 1).
+    #[arg(long)]
     pub occurrence: Option<usize>,
+    /// Case-insensitive selector matching. Original bytes are never case-converted.
+    #[arg(short = 'i', long)]
     pub ignore_case: bool,
+    /// Make regex ^ and $ match line boundaries.
+    #[arg(long)]
     pub multiline: bool,
+    /// Make regex . also match newlines.
+    #[arg(long)]
     pub dotall: bool,
 }
 

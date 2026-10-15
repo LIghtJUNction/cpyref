@@ -194,32 +194,8 @@ pub struct FilterArgs {
 pub struct CopyArgs {
     /// Input file, or - for stdin. Omit the source when piping input. No selector means all bytes.
     pub source: Option<PathBuf>,
-    /// One-based inclusive lines: N or START:END. Original line endings are retained.
-    #[arg(long)]
-    pub lines: Option<String>,
-    /// Match exact text, including overlapping matches.
-    #[arg(long)]
-    pub text: Option<String>,
-    /// Match a Rust regex. Matches are leftmost and non-overlapping.
-    #[arg(long)]
-    pub regex: Option<String>,
-    /// Start marker; pair with its nearest following end marker.
-    #[arg(long, requires = "to")]
-    pub from: Option<String>,
-    #[arg(long, requires = "from")]
-    pub to: Option<String>,
-    /// Interpret both markers as regexes instead of literal text.
-    #[arg(long, requires = "from")]
-    pub markers_regex: bool,
-    /// Copy only content between the markers, without the markers themselves.
-    #[arg(long, requires = "from")]
-    pub exclude_markers: bool,
-    /// Exclude only the start marker (both markers are included by default).
-    #[arg(long, requires = "from", conflicts_with = "exclude_markers")]
-    pub exclude_start: bool,
-    /// Exclude only the end marker, keeping the current function declaration.
-    #[arg(long, requires = "from", conflicts_with = "exclude_markers")]
-    pub exclude_end: bool,
+    #[command(flatten)]
+    pub spec: Spec,
     /// Optional metadata note; never changes the saved bytes.
     #[arg(long)]
     pub note: Option<String>,
@@ -231,64 +207,12 @@ pub struct CopyArgs {
     pub show_content: bool,
     #[arg(long, requires = "show_content", default_value_t = 256, value_parser = clap::value_parser!(u32).range(1..=4096))]
     pub preview_bytes: u32,
-    /// Copy a numbered or named regex capture group, not the complete match.
-    #[arg(long, requires = "regex")]
-    pub group: Option<String>,
-    /// Restrict all searching to these absolute, one-based inclusive lines.
-    #[arg(long)]
-    pub within: Option<String>,
-    /// Require exact, case-sensitive text in the preceding context window.
-    #[arg(long)]
-    pub before: Option<String>,
-    /// Require exact, case-sensitive text in the following context window.
-    #[arg(long)]
-    pub after: Option<String>,
-    /// Extra lines on each side for context filters, in addition to the same line.
-    #[arg(long, default_value_t = 3)]
-    pub context_lines: usize,
-    /// Explicitly select the Nth match after scope and context filtering (starts at 1).
-    #[arg(long)]
-    pub occurrence: Option<usize>,
-    /// Case-insensitive selector matching. Original bytes are never case-converted.
-    #[arg(short = 'i', long)]
-    pub ignore_case: bool,
-    /// Make regex ^ and $ match line boundaries.
-    #[arg(long)]
-    pub multiline: bool,
-    /// Make regex . also match newlines.
-    #[arg(long)]
-    pub dotall: bool,
     /// Input read limit in bytes. Hard maximum: 134217728 (128 MiB).
     #[arg(long, default_value_t = DEFAULT_MAX_BYTES)]
     pub max_bytes: usize,
     /// Return JSON metadata and selected space on success instead of only the reference.
     #[arg(long)]
     pub json: bool,
-}
-
-impl CopyArgs {
-    pub fn spec(&self) -> Spec {
-        Spec {
-            lines: self.lines.clone(),
-            text: self.text.clone(),
-            regex: self.regex.clone(),
-            from: self.from.clone(),
-            to: self.to.clone(),
-            markers_regex: self.markers_regex,
-            exclude_markers: self.exclude_markers,
-            exclude_start: self.exclude_start,
-            exclude_end: self.exclude_end,
-            group: self.group.clone(),
-            within: self.within.clone(),
-            before: self.before.clone(),
-            after: self.after.clone(),
-            context_lines: self.context_lines,
-            occurrence: self.occurrence,
-            ignore_case: self.ignore_case,
-            multiline: self.multiline,
-            dotall: self.dotall,
-        }
-    }
 }
 
 #[derive(Debug, Args)]
@@ -358,4 +282,48 @@ pub enum SnapshotCommand {
         #[arg(long, default_value_t = 0)]
         offset: usize,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn copy_selector_arguments_keep_defaults_and_constraints() {
+        Cli::command().debug_assert();
+        let parse = |flags: &[&str]| {
+            let args = ["cpyref", "copy", "input.txt"].into_iter();
+            Cli::try_parse_from(args.chain(flags.iter().copied()))
+        };
+        let Command::Copy(args) = parse(&[]).unwrap().command else {
+            panic!("expected copy command");
+        };
+        assert_eq!(args.spec.context_lines, 3);
+        assert_eq!(Spec::default().context_lines, 0);
+        for flags in [
+            vec!["--lines", "1:2"],
+            vec!["--text", "word", "-i", "--within", "1:9"],
+            vec!["--regex", "(word)", "--group", "1"],
+            vec!["--from", "BEGIN", "--to", "END", "--exclude-end"],
+        ] {
+            assert!(parse(&flags).is_ok(), "{flags:?}");
+        }
+        for flags in [
+            vec!["--from", "BEGIN"],
+            vec!["--to", "END"],
+            vec!["--group", "1"],
+            vec!["--exclude-start"],
+            vec![
+                "--from",
+                "B",
+                "--to",
+                "E",
+                "--exclude-markers",
+                "--exclude-end",
+            ],
+        ] {
+            assert!(parse(&flags).is_err(), "{flags:?}");
+        }
+    }
 }

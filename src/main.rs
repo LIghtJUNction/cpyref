@@ -98,7 +98,7 @@ fn execute(command: Command, context: &Context) -> Result<()> {
                 None => return Err(Error::invalid("Provide an input file or pipe bytes into cpyref copy. Use copy - for explicit interactive stdin.")),
             };
             let data = read_input(source_path, args.max_bytes)?;
-            let preview = preview(&data, &args.spec())?;
+            let preview = preview(&data, &args.spec)?;
             if args.dry_run {
                 let span = &preview.selected;
                 let mut report = json!({"ok": true, "dry_run": true, "match_count": preview.match_count,
