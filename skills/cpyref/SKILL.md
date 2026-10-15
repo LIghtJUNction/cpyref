@@ -5,7 +5,7 @@ description: Reuse exact bytes, plan safe edits, and retain long logs without ex
 
 # cpyref
 
-Check `cpyref --version` and `cpyref apply --help` once. Plan/apply requires the updated source build; otherwise use the existing hash workflow. Prefer `cp` for one whole-file copy.
+Check `cpyref --version` and `cpyref apply --help` once. Plan/apply requires 0.3.1+; older versions use the hash workflow. Prefer `cp` for one whole-file copy.
 
 ```sh
 # Bash: preserve producer failures.

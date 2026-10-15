@@ -1,7 +1,6 @@
 # Copy, plan, apply
 
-These commands require a source build with `insert --plan` and `apply`.
-Existing released binaries may not have them. Check `cpyref apply --help` once.
+These commands require cpyref 0.3.1 or newer. Check `cpyref apply --help` once.
 The existing `--dry-run` / `--expect-sha256` route is unchanged.
 
 ## Reuse bytes without handling an ID or hash by hand

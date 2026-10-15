@@ -12,7 +12,7 @@
 
 ## 简单编辑流程
 
-`cpyref copy FILE | cpyref insert - TARGET --at-end --plan` 只生成计划；检查目标和范围后，在相同空间运行返回的 `cpyref apply PLAN_ID`。无需提取哈希。替换使用 `cpyref replace`。不得因 `TARGET_CHANGED` 自动重新生成计划后重试。新流程需更新源码，详见[管道与编辑计划](easy-edits.md)。
+`cpyref copy FILE | cpyref insert - TARGET --at-end --plan` 只生成计划；检查目标和范围后，在相同空间运行返回的 `cpyref apply PLAN_ID`。无需提取哈希。替换使用 `cpyref replace`。不得因 `TARGET_CHANGED` 自动重新生成计划后重试。新流程要求 0.3.1+，详见[管道与编辑计划](easy-edits.md)。
 
 命令示例必须带 `cpyref` 前缀。`-` 传入一个完整编号或成功的对应 JSON，不传正文。源选择器不可混用；需要给标记限定范围时使用 `--within`，而不是叠加 `--lines`。
 

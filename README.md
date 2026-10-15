@@ -15,7 +15,7 @@ cpyref --version
 
 源码安装：`cargo install --git https://github.com/LIghtJUNction/cpyref --locked`。
 无 Rust 环境的安装包与 AUR 用法见[安装与发布](docs/releases.md)。
-Agent 可安装 [skills/cpyref](skills/cpyref/SKILL.md)，按需读取子命令的 `--help`。下述交接和编辑功能要求 0.3.0+。
+Agent 可安装 [skills/cpyref](skills/cpyref/SKILL.md)，按需读取子命令的 `--help`。交接功能要求 0.3.0+；编号管道和编辑计划要求 0.3.1+。
 
 ## 复制与粘贴
 
@@ -46,7 +46,7 @@ cat file.txt | cpyref copy
 
 ## 少传编号，不抄哈希
 
-以下新流程需从包含 `apply` 的源码安装，旧发布包可能没有：
+以下流程从 0.3.1 起提供：
 
 ```sh
 set -o pipefail  # Bash；保留上游失败状态
