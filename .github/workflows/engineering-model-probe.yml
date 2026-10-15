@@ -1,0 +1,64 @@
+name: Engineering pilot model transport check
+on:
+  push:
+    branches: [bench/engineering-pilot-20261015]
+    paths: ['.github/workflows/engineering-model-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Prepare the same public runtime
+        run: |
+          mkdir -p out
+          python3 benchmarks/engineering_pilot/prepare.py "$RUNNER_TEMP/inference"
+          cp "$RUNNER_TEMP/inference/environment.json" out/environment.json
+      - name: Inspect actual JSON transport in default and non-thinking modes
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, time, urllib.request
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'inference'
+          config=json.loads((root/'environment.json').read_text())
+          server=Path(config['server']); env=dict(os.environ)
+          env['LD_LIBRARY_PATH']=str(server.parent)+':'+env.get('LD_LIBRARY_PATH','')
+          records=[]
+          for mode,extra in [('default',[]),('reasoning_off',['--reasoning','off'])]:
+              with Path('out/'+mode+'.log').open('w') as log:
+                  p=subprocess.Popen([str(server),'-m',config['model_path'],'-c','8192','-t','4','-np','1','--host','127.0.0.1','--port','8080']+extra,env=env,stdout=log,stderr=subprocess.STDOUT)
+                  try:
+                      for _ in range(120):
+                          if p.poll() is not None: raise RuntimeError('server exited')
+                          try:
+                              with urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=2) as r:
+                                  if r.status==200: break
+                          except Exception: time.sleep(1)
+                      else: raise RuntimeError('readiness timeout')
+                      payload={'model':'local','messages':[{'role':'system','content':'Return exactly one JSON object. No markdown or explanation.'},{'role':'user','content':'Return {"action":"done"} exactly.'}],'temperature':0,'seed':17,'max_tokens':128,'stream':False,'cache_prompt':False,'response_format':{'type':'json_object'}}
+                      req=urllib.request.Request('http://127.0.0.1:8080/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+                      start=time.perf_counter()
+                      with urllib.request.urlopen(req,timeout=180) as r: answer=json.load(r)
+                      record={'mode':mode,'seconds':time.perf_counter()-start,'request':payload,'response':answer,'not_an_engineering_task':True}
+                      records.append(record)
+                      print(json.dumps(record),flush=True)
+                  except Exception as e:
+                      records.append({'mode':mode,'error':str(e),'not_an_engineering_task':True})
+                      print(mode,str(e),flush=True)
+                  finally:
+                      p.terminate()
+                      try: p.wait(timeout=10)
+                      except subprocess.TimeoutExpired: p.kill(); p.wait()
+          Path('out/probe.json').write_text(json.dumps(records,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: engineering-model-transport
+          path: out/
+          retention-days: 7
