@@ -47,6 +47,7 @@ pub fn kind_name(kind: RecordKind) -> &'static str {
         RecordKind::Snapshot => "snapshot",
         RecordKind::Run => "run",
         RecordKind::Bundle => "bundle",
+        RecordKind::EditPlan => "edit_plan",
     }
 }
 
