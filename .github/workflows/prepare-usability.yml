@@ -1,0 +1,39 @@
+name: Prepare and verify easier copy workflows
+on:
+  push:
+    branches: [feat/usability-plans-20261015]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: contains(github.event.head_commit.message, '[prepare-usability]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Apply exact reviewed source changes
+        run: python3 scripts/prepare_usability.py
+      - name: Install Rust formatter and checks
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Format and publish final source only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup default stable
+          cargo fmt --all
+          rm scripts/prepare_usability.py .github/workflows/prepare-usability.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src tests docs README.md skills/cpyref/SKILL.md scripts/prepare_usability.py .github/workflows/prepare-usability.yml
+          git commit -m 'feat: add scoped edit plans and safe reference pipelines'
+          git push origin HEAD:feat/usability-plans-20261015
+          git rev-parse HEAD
+      - name: Run Rust library and CLI tests
+        run: cargo test --locked --all-targets
+      - name: Check warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Build CLI and test packaging and protections
+        run: |
+          cargo build --locked
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
