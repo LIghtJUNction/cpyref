@@ -1,0 +1,119 @@
+name: CpyRef real-model engineering pilot
+on:
+  push:
+    branches: [bench/engineering-pilot-20261015]
+    paths:
+      - '.github/workflows/engineering-pilot.yml'
+      - 'benchmarks/engineering_pilot/*.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: engineering-pilot-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  CPYREF_TEST_SHA: 0c869fdc31e21490a6a7cbfa90f9e0229c46af04
+jobs:
+  pilot:
+    name: Paired tasks ${{ matrix.shard }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Validate failing fixtures and accepted golden solutions
+        run: python3 benchmarks/engineering_pilot/tasks.py
+      - name: Install latest Git source at the frozen revision
+        run: |
+          mkdir -p out
+          sudo apt-get update -qq
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+          set -o pipefail
+          cargo install --git https://github.com/LIghtJUNction/cpyref --rev "$CPYREF_TEST_SHA" --locked --target x86_64-unknown-linux-musl --root "$RUNNER_TEMP/cpyref" 2>&1 | tee out/install.log
+          "$RUNNER_TEMP/cpyref/bin/cpyref" --version | tee out/installed-version.txt
+          printf '%s\n' "$CPYREF_TEST_SHA" > out/tested-source-sha.txt
+          git rev-parse HEAD > out/experiment-sha.txt
+          sha256sum benchmarks/engineering_pilot/*.py benchmarks/engineering_pilot/PROTOCOL.md > out/source.sha256
+      - name: Prepare public local-model runtime
+        run: python3 benchmarks/engineering_pilot/prepare.py "$RUNNER_TEMP/inference"
+      - name: Execute paired real-model episodes
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, time, urllib.request
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'inference'
+          config=json.loads((root/'environment.json').read_text())
+          server=Path(config['server'])
+          env=dict(os.environ)
+          env['LD_LIBRARY_PATH']=str(server.parent)+':'+env.get('LD_LIBRARY_PATH','')
+          log=Path('out/server.log').open('w')
+          p=subprocess.Popen([str(server), '-m',config['model_path'],'-c','8192','-t','4','-np','1','--host','127.0.0.1','--port','8080'], env=env, stdout=log, stderr=subprocess.STDOUT)
+          try:
+              for _ in range(120):
+                  if p.poll() is not None:
+                      raise RuntimeError('Local model server exited before becoming ready')
+                  try:
+                      with urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=2) as r:
+                          if r.status == 200: break
+                  except Exception: time.sleep(1)
+              else: raise RuntimeError('Local model server readiness timeout')
+              subprocess.run(['python3','benchmarks/engineering_pilot/agent.py',
+                  '--environment',str(root/'environment.json'),'--binary',str(Path(os.environ['RUNNER_TEMP'])/'cpyref/bin/cpyref'),
+                  '--output','out','--shard',os.environ['SHARD']],check=True)
+          finally:
+              p.terminate()
+              try: p.wait(timeout=15)
+              except subprocess.TimeoutExpired: p.kill(); p.wait()
+              log.close()
+          PY
+      - name: Preserve all evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineering-pilot-${{ matrix.shard }}
+          path: out/
+          retention-days: 7
+          if-no-files-found: error
+  report:
+    name: Audit and retain evidence on the experiment branch
+    if: always()
+    needs: pilot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: bench/engineering-pilot-20261015
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: engineering-pilot-*
+          path: incoming
+      - name: Audit all results without dropping failures
+        run: |
+          result="benchmarks/engineering_pilot/results/${{ github.run_id }}"
+          mkdir -p "$result"
+          for i in 0 1 2; do
+            if test -d "incoming/engineering-pilot-$i"; then
+              mkdir -p "$result/shard-$i"
+              cp -a "incoming/engineering-pilot-$i/." "$result/shard-$i/"
+            fi
+          done
+          python3 benchmarks/engineering_pilot/report.py "$result" || echo 'Incomplete-data audit preserved; not a successful benchmark claim.'
+          cat "$result/REPORT.md" >> "$GITHUB_STEP_SUMMARY"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add benchmarks/engineering_pilot
+          git commit -m "bench: retain real-model pilot evidence for run ${{ github.run_id }} [skip ci]"
+          git push origin HEAD:bench/engineering-pilot-20261015
