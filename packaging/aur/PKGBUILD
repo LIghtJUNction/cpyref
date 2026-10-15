@@ -44,4 +44,10 @@ package() {
   install -m644 docs/*.md "$pkgdir/usr/share/doc/$pkgname/docs/"
   install -Dm644 skills/cpyref/SKILL.md "$pkgdir/usr/share/doc/$pkgname/skills/cpyref/SKILL.md"
   install -Dm644 skills/cpyref/agents/openai.yaml "$pkgdir/usr/share/doc/$pkgname/skills/cpyref/agents/openai.yaml"
+  install -dm755 "$pkgdir/usr/share/doc/$pkgname/examples"
+  install -m644 examples/project.toml examples/shared.toml "$pkgdir/usr/share/doc/$pkgname/examples/"
+  # Keep the recipe usable with the pinned crate until the next source release.
+  if [[ -f examples/agentgc-handoff.sh ]]; then
+    install -Dm755 examples/agentgc-handoff.sh "$pkgdir/usr/share/doc/$pkgname/examples/agentgc-handoff.sh"
+  fi
 }

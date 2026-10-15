@@ -23,6 +23,17 @@ fn change_report(changes: &[Change], offset: usize, limit: usize) -> Value {
         "semantic_position_verified": false})
 }
 
+fn created_handoff_error(mut error: Error, id: &str, stage: &str) -> Error {
+    if !error.details.is_object() {
+        error.details = json!({"cause": error.details});
+    }
+    error.details["created_references"] = json!([{"name": "package", "id": id}]);
+    error.details["side_effects"] = json!(true);
+    error.details["retry_safe"] = json!(false);
+    error.details["stage"] = json!(stage);
+    error
+}
+
 fn show_bundle(context: &Context, id: &str, offset: usize, limit: usize) -> Result<()> {
     let manifest = bundle::load(&context.store()?, id)?;
     let items: Vec<_> = manifest
@@ -39,6 +50,56 @@ fn show_bundle(context: &Context, id: &str, offset: usize, limit: usize) -> Resu
         &json!({"reference": id, "kind": "bundle", "item_count": manifest.items.len(),
         "items": items, "offset": offset, "omitted": manifest.items.len().saturating_sub(offset).saturating_sub(items.len())}),
     )
+}
+
+/// Inspect a received index without expanding any saved item.
+pub fn receive_index(context: &Context, metadata: Metadata, offset: u64, limit: u32) -> Result<u8> {
+    if metadata.kind == RecordKind::Bundle {
+        show_bundle(
+            context,
+            &metadata.id,
+            usize::try_from(offset).unwrap_or(usize::MAX),
+            limit as usize,
+        )?;
+    } else {
+        print_json(&json!({"reference": metadata.id, "kind": metadata.kind,
+            "bytes": metadata.bytes, "sha256": metadata.sha256,
+            "historical_snapshot": true, "transport": "same_host"}))?;
+    }
+    Ok(0)
+}
+
+/// A received preview stays bound to the hash carried by its ticket or package.
+pub fn receive_preview(
+    context: &Context,
+    metadata: Metadata,
+    offset: u64,
+    max_bytes: u32,
+) -> Result<u8> {
+    if metadata.kind != RecordKind::Bytes {
+        return Err(Error::new(
+            "WRONG_KIND",
+            4,
+            "--read requires byte content; use --list or receive a typed record's summary.",
+        ));
+    }
+    let preview = cpyref::inspect::read(
+        &context.store()?,
+        &metadata.id,
+        offset,
+        max_bytes,
+        None,
+        false,
+    )?;
+    if preview["sha256"] != metadata.sha256 {
+        return Err(Error::new(
+            "HASH_MISMATCH",
+            7,
+            "Record changed before preview.",
+        ));
+    }
+    print_json(&preview)?;
+    Ok(0)
 }
 
 /// Receiving never executes stored commands or applies patches.
@@ -180,12 +241,58 @@ pub fn execute(command: Command, context: &Context) -> Result<u8> {
             print_json(&report)?;
             Ok(if original { 0 } else { 10 })
         }
-        Command::Handoff { id, format } => {
+        Command::Handoff {
+            id,
+            input,
+            attach,
+            max_bytes,
+            format,
+        } => {
             let executable =
                 std::env::current_exe().map_err(|e| Error::io("Resolve current executable", e))?;
-            let report = handoff::handoff(context, &id, &format, &executable)?;
-            if format == "json" {
-                print_json(&report)?;
+            // Renderable paths and format are checked before creation can publish any record.
+            snapshot::native_text(&executable)?;
+            snapshot::native_text(&context.store_base)?;
+            snapshot::native_text(&context.cwd)?;
+            if let Some(path) = &context.project_root {
+                snapshot::native_text(path)?;
+            }
+            let created = input.is_some();
+            let format = format
+                .as_deref()
+                .unwrap_or(if created { "agent" } else { "json" });
+            let id = if let Some(input) = input {
+                if input == std::path::Path::new("-")
+                    && std::io::IsTerminal::is_terminal(&std::io::stdin())
+                {
+                    return Err(Error::invalid(
+                        "Pipe notes into cpyref handoff --input -, or provide a notes file.",
+                    ));
+                }
+                cpyref::prepare::create(context, &input, &attach, max_bytes)?.id
+            } else {
+                id.ok_or_else(|| Error::invalid("Provide a reference or --input notes file."))?
+            };
+            let mut report =
+                handoff::handoff(context, &id, format, &executable).map_err(|error| {
+                    if created {
+                        created_handoff_error(error, &id, "render_handoff")
+                    } else {
+                        error
+                    }
+                })?;
+            if created {
+                report["created"] = json!(true);
+            }
+            let output = if format == "json" {
+                print_json(&report)
+            } else if format == "agent" {
+                writeln!(
+                    std::io::stdout().lock(),
+                    "{}",
+                    report["prompt"].as_str().unwrap_or_default()
+                )
+                .map_err(|e| Error::io("Write agent handoff", e))
             } else {
                 writeln!(
                     std::io::stdout().lock(),
@@ -194,8 +301,15 @@ pub fn execute(command: Command, context: &Context) -> Result<u8> {
                         .as_str()
                         .unwrap_or_default()
                 )
-                .map_err(|e| Error::io("Write handoff command", e))?;
-            }
+                .map_err(|e| Error::io("Write handoff command", e))
+            };
+            output.map_err(|error| {
+                if created {
+                    created_handoff_error(error, &id, "write_handoff")
+                } else {
+                    error
+                }
+            })?;
             Ok(0)
         }
         Command::Snapshot(args) => match args.command {
@@ -254,6 +368,7 @@ pub fn execute(command: Command, context: &Context) -> Result<u8> {
             offset,
             limit,
             max_bytes,
+            tail,
             output,
             force,
         } => {
@@ -283,7 +398,11 @@ pub fn execute(command: Command, context: &Context) -> Result<u8> {
                         &json!({"reference": id, "stream": stream, "output": path, "bytes": length, "complete": true}),
                     )?;
                 } else {
-                    let offset = offset.min(length);
+                    let offset = if tail {
+                        length.saturating_sub(u64::from(max_bytes))
+                    } else {
+                        offset.min(length)
+                    };
                     loaded
                         .file
                         .seek(SeekFrom::Start(start + offset))

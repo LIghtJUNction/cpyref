@@ -225,6 +225,78 @@ fn notes_filters_pagination_and_old_format() {
 }
 
 #[test]
+fn ids_only_inventory_preserves_filters_order_and_pagination_without_metadata() {
+    let f = Fixture::new();
+    f.copy(&["--note", "keep\nprivate-note"]);
+    f.copy(&["--note", "keep"]);
+    f.copy(&["--note", "other"]);
+    let snapshot = f.json(&["snapshot", "input"]);
+    let snapshot_id = snapshot["reference"].as_str().unwrap();
+    let output = f.run(&["list", "--kind", "snapshot", "--ids"]);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(output.stdout, format!("{snapshot_id}\n").as_bytes());
+
+    let page = f.json(&[
+        "list", "--kind", "bytes", "--source", "input", "--note", "keep", "--offset", "1",
+        "--limit", "1", "--json",
+    ]);
+    assert_eq!(page["total"], 2);
+    let expected = page["references"][0]["id"].as_str().unwrap();
+    let output = f.run(&[
+        "list", "--kind", "bytes", "--source", "input", "--note", "keep", "--offset", "1",
+        "--limit", "1", "--ids",
+    ]);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(output.stdout, format!("{expected}\n").as_bytes());
+    for args in [
+        vec!["list", "--kind", "run", "--ids"],
+        vec!["list", "--ids", "--offset", "999"],
+        vec!["--namespace", "other", "list", "--ids"],
+    ] {
+        let output = f.run(&args);
+        assert!(output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.is_empty());
+    }
+    failure(f.run(&["list", "--ids", "--json"]), "INVALID_ARGUMENT");
+}
+
+#[test]
+fn ids_only_search_retains_content_matching_and_metadata_only_rules() {
+    let f = Fixture::new();
+    f.copy(&["--note", "first"]);
+    f.copy(&["--note", "second"]);
+    let page = f.json(&["search", "PRIVATE PAYLOAD", "-i", "--limit", "1", "--json"]);
+    assert_eq!(page["total"], 2);
+    let expected = page["references"][0]["id"].as_str().unwrap();
+    let output = f.run(&[
+        "search",
+        "PRIVATE PAYLOAD",
+        "-i",
+        "--kind",
+        "bytes",
+        "--source",
+        "input",
+        "--limit",
+        "1",
+        "--ids",
+    ]);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(output.stdout, format!("{expected}\n").as_bytes());
+    let output = f.run(&["search", "private payload", "--metadata-only", "--ids"]);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+    failure(
+        f.run(&["search", "private", "--ids", "--json"]),
+        "INVALID_ARGUMENT",
+    );
+}
+
+#[test]
 fn stats_measure_payload_and_record_size_without_expanding_content() {
     let f = Fixture::new();
     f.copy(&[]);

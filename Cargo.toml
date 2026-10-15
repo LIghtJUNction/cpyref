@@ -1,6 +1,6 @@
 [package]
 name = "cpyref"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.89"
 description = "Copy exact bytes once and paste them by a short reference, for AI agents"
@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["cli", "clipboard", "ai", "agents", "copy"]
 categories = ["command-line-utilities", "development-tools"]
 publish = ["crates-io"]
-include = ["/src/**", "/tests/*.rs", "/docs/**", "/skills/**", "/examples/**", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/LICENSE.MIT", "/AGENTS.md", "/UPSTREAM.toml", "/README.md"]
+include = ["/src/**", "/tests/*.rs", "/docs/**", "/skills/**", "/examples/agentgc-handoff.sh", "/examples/project.toml", "/examples/shared.toml", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/LICENSE.MIT", "/AGENTS.md", "/UPSTREAM.toml", "/README.md"]
 
 [dependencies]
 command-group = "5.0.1"

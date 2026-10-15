@@ -8,6 +8,10 @@ Cargo：
 cargo install cpyref --locked
 ```
 
+程序名是 `cpyref`。用户说“用 cpy 交接”时，Agent 应调用 `cpyref`；想在 POSIX 交互终端使用简称，可选执行 `alias cpy=cpyref`，并按需自行加入所用 shell 的配置。脚本仍调用 `cpyref`，安装过程不修改 shell 配置，也不安装全局 `cpy` 命令。
+
+一步交接、有限读取和 AgentGC 联合示例要求 CpyRef 0.4.0+。升级后用 `cpyref --version` 确认 PATH 中实际运行的版本；各功能的最低版本见 [README](../README.md)。
+
 Arch Linux 的 AUR 源码包：
 
 ```sh
@@ -52,4 +56,4 @@ cargo publish --locked
 
 AUR 打包文件位于 `packaging/aur/`。更新版本与源码 SHA-256，在 Arch Linux 上运行 `makepkg` 验证后，用 `makepkg --printsrcinfo` 更新 `.SRCINFO`，再提交到 AUR 包仓库的 `master`。
 
-许可证迁移：仓库 `main` 从 2026-10-15 开始采用 AUL 1.0-draft.1，已有的 `cpyref` 0.1.1 crates.io 包及其 AUR 包仍是 MIT。下一次发布时，更新 AUR 的许可证、`PKGBUILD` 与 `.SRCINFO`，并核对安装包内的 LICENSE；不要把旧 MIT 构建重新标记为 AUL。
+许可证：已发布的 0.2.2、0.3.0 和 0.3.1 采用 AUL 1.0-draft.1，当前源码延续该许可证；0.1.x 历史发行版仍是 MIT，原有 MIT 授权不变。发布时核对 crate、AUR 元数据与安装包中的 LICENSE，并保留 LICENSE.MIT；不要把旧 MIT 构建重新标记为 AUL。

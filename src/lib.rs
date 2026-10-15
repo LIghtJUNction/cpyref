@@ -2,7 +2,10 @@
 pub mod bundle;
 pub mod context;
 pub mod error;
+pub mod find;
 pub mod handoff;
+pub mod inspect;
+pub mod prepare;
 pub mod runner;
 pub mod search;
 pub mod select;

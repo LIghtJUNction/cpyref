@@ -8,6 +8,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -28,6 +29,7 @@ class PackagingTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         (self.root / "docs" / "nested").mkdir(parents=True)
         (self.root / "skills" / "cpyref" / "agents").mkdir(parents=True)
+        (self.root / "examples").mkdir()
         (self.root / "LICENSE").write_bytes(b"AUL license\n")
         (self.root / "LICENSE.MIT").write_bytes(b"Historical MIT license\n")
         (self.root / "AGENTS.md").write_bytes(b"Agent instructions\n")
@@ -36,6 +38,15 @@ class PackagingTests(unittest.TestCase):
         (self.root / "docs" / "nested" / "usage.md").write_bytes(b"usage\n")
         (self.root / "skills" / "cpyref" / "SKILL.md").write_bytes(b"---\nname: cpyref\n---\n")
         (self.root / "skills" / "cpyref" / "agents" / "openai.yaml").write_bytes(b"interface:\n  display_name: CpyRef\n")
+        self.example = self.root / "examples" / "agentgc-handoff.sh"
+        self.example.write_bytes(b"#!/usr/bin/env bash\nset -euo pipefail\n")
+        self.example.chmod(0o600)
+        (self.root / "examples" / "project.toml").write_bytes(b"namespace = 'demo'\n")
+        (self.root / "examples" / "project.toml").chmod(0o700)
+        (self.root / "examples" / "shared.toml").write_bytes(b"scope = 'shared'\n")
+        (self.root / "examples" / ".cpyref-local").mkdir()
+        (self.root / "examples" / ".cpyref-local" / "private.ref").write_bytes(b"SYNTHETIC PRIVATE SNAPSHOT")
+        (self.root / "examples" / "private.txt").write_bytes(b"SYNTHETIC PRIVATE NOTE")
         self.binary = self.root / "input-binary"
         self.binary.write_bytes(b"binary\x00\xff\n")
         self.output = self.root / "dist"
@@ -64,6 +75,17 @@ class PackagingTests(unittest.TestCase):
                     self.assertEqual(archive.extractfile(base + "/skills/cpyref/agents/openai.yaml").read(), b"interface:\n  display_name: CpyRef\n")
                     self.assertEqual(archive.getmember(base + "/skills/cpyref/agents").mode, 0o755)
                     self.assertEqual(archive.getmember(base + "/skills/cpyref/agents/openai.yaml").mode, 0o644)
+                    self.assertEqual(archive.extractfile(base + "/examples/agentgc-handoff.sh").read(), self.example.read_bytes())
+                    self.assertEqual(archive.extractfile(base + "/examples/project.toml").read(), b"namespace = 'demo'\n")
+                    self.assertEqual(archive.extractfile(base + "/examples/shared.toml").read(), b"scope = 'shared'\n")
+                    self.assertEqual(archive.getmember(base + "/examples").mode, 0o755)
+                    self.assertEqual(archive.getmember(base + "/examples/agentgc-handoff.sh").mode, 0o755)
+                    self.assertEqual(archive.getmember(base + "/examples/project.toml").mode, 0o644)
+                    self.assertEqual(archive.getmember(base + "/examples/shared.toml").mode, 0o644)
+                    self.assertEqual({member.name for member in archive.getmembers()
+                                      if member.name.startswith(base + "/examples/")},
+                                     {base + "/examples/" + name for name in
+                                      ("agentgc-handoff.sh", "project.toml", "shared.toml")})
                     self.assertTrue(all(member.uid == member.gid == 0 for member in archive.getmembers()))
 
     def test_windows_zip_preserves_layout_bytes_and_unix_modes(self):
@@ -84,6 +106,16 @@ class PackagingTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(archive.getinfo(base + "/README.md").external_attr >> 16), 0o644)
             self.assertEqual(stat.S_IMODE(archive.getinfo(base + "/skills/cpyref/agents/").external_attr >> 16), 0o755)
             self.assertEqual(stat.S_IMODE(archive.getinfo(base + "/skills/cpyref/agents/openai.yaml").external_attr >> 16), 0o644)
+            self.assertEqual(archive.read(base + "/examples/agentgc-handoff.sh"), self.example.read_bytes())
+            self.assertEqual(archive.read(base + "/examples/project.toml"), b"namespace = 'demo'\n")
+            self.assertEqual(archive.read(base + "/examples/shared.toml"), b"scope = 'shared'\n")
+            self.assertEqual(stat.S_IMODE(archive.getinfo(base + "/examples/").external_attr >> 16), 0o755)
+            self.assertEqual(stat.S_IMODE(archive.getinfo(base + "/examples/agentgc-handoff.sh").external_attr >> 16), 0o755)
+            self.assertEqual(stat.S_IMODE(archive.getinfo(base + "/examples/project.toml").external_attr >> 16), 0o644)
+            self.assertEqual(stat.S_IMODE(archive.getinfo(base + "/examples/shared.toml").external_attr >> 16), 0o644)
+            self.assertEqual({name for name in archive.namelist() if name.startswith(base + "/examples/")},
+                             {base + "/examples/"} | {base + "/examples/" + name for name in
+                              ("agentgc-handoff.sh", "project.toml", "shared.toml")})
             self.assertTrue(all(name.startswith(base + "/") for name in archive.namelist()))
 
     def test_invalid_versions_and_targets_cannot_create_outputs(self):
@@ -145,6 +177,103 @@ class PackagingTests(unittest.TestCase):
             package.create_archive(self.root, self.binary, package.TARGETS[0], "1.2.3", self.output)
         self.assertFalse(self.output.exists())
 
+    def test_missing_linked_handoff_example_is_rejected_before_output_creation(self):
+        self.example.unlink()
+        with self.assertRaisesRegex(ValueError, "regular file"):
+            package.create_archive(self.root, self.binary, package.TARGETS[0], "1.2.3", self.output)
+        self.assertFalse(self.output.exists())
+
+    @unittest.skipIf(os.name == "nt", "creating symlinks on Windows requires privileges")
+    def test_known_example_files_and_ancestor_symlinks_are_rejected(self):
+        for filename in ("agentgc-handoff.sh", "project.toml", "shared.toml"):
+            with self.subTest(filename=filename):
+                link = self.root / "examples" / filename
+                original = link.read_bytes()
+                link.unlink()
+                link.symlink_to(self.binary)
+                try:
+                    with self.assertRaisesRegex(ValueError, "symlink"):
+                        package.create_archive(self.root, self.binary, package.TARGETS[0], "1.2.3", self.output)
+                    self.assertFalse(self.output.exists())
+                finally:
+                    link.unlink()
+                    link.write_bytes(original)
+        (self.root / "examples").rename(self.root / "real-examples")
+        (self.root / "examples").symlink_to(self.root / "real-examples", target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            package.create_archive(self.root, self.binary, package.TARGETS[0], "1.2.3", self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_linux_package_staging_includes_examples_with_normalized_modes(self):
+        # Inspect what each real nFPM invocation would receive, before its
+        # temporary input tree is removed. This needs no system package tools.
+        (self.root / "packaging").mkdir()
+        shutil.copyfile(REPO / "packaging" / "nfpm.yaml", self.root / "packaging" / "nfpm.yaml")
+        observed_packagers = []
+
+        def nfpm_run(argv, *, check, env):
+            self.assertTrue(check)
+            self.assertEqual(argv[0], "nfpm")
+            config = Path(argv[argv.index("--config") + 1]).read_text()
+            self.assertIn("src: ${CPYREF_EXAMPLES}\n    dst: /usr/share/doc/cpyref/examples", config)
+            examples = Path(env["CPYREF_EXAMPLES"])
+            self.assertEqual((examples / "agentgc-handoff.sh").read_bytes(), self.example.read_bytes())
+            self.assertEqual((examples / "project.toml").read_bytes(), b"namespace = 'demo'\n")
+            self.assertEqual((examples / "shared.toml").read_bytes(), b"scope = 'shared'\n")
+            self.assertEqual({path.name for path in examples.iterdir()},
+                             {"agentgc-handoff.sh", "project.toml", "shared.toml"})
+            if os.name == "posix":
+                self.assertEqual(stat.S_IMODE(examples.stat().st_mode), 0o755)
+                self.assertEqual(stat.S_IMODE((examples / "agentgc-handoff.sh").stat().st_mode), 0o755)
+                self.assertEqual(stat.S_IMODE((examples / "project.toml").stat().st_mode), 0o644)
+            packager = argv[argv.index("--packager") + 1]
+            observed_packagers.append(packager)
+            Path(argv[argv.index("--target") + 1]).write_bytes(packager.encode())
+
+        with mock.patch.object(package.subprocess, "run", side_effect=nfpm_run):
+            outputs = package.create_linux_packages(
+                self.root, self.binary, package.TARGETS[0], "1.2.3", self.output, "nfpm")
+        self.assertEqual(observed_packagers, ["deb", "rpm", "archlinux"])
+        self.assertEqual([path.read_bytes() for path in outputs], [b"deb", b"rpm", b"archlinux"])
+        self.assertEqual(len(list(self.output.iterdir())), 3)
+
+    @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("bash") and shutil.which("install"),
+                         "Linux, Bash and install required for AUR layout check")
+    def test_aur_recipe_installs_examples_and_accepts_the_older_pinned_source(self):
+        recipe = (REPO / "packaging" / "aur" / "PKGBUILD").read_text()
+        version = re.search(r"^pkgver=(.+)$", recipe, re.MULTILINE).group(1)
+        work = self.root / "aur-work"
+        source = work / f"cpyref-{version}"
+        source.mkdir(parents=True)
+        for name in ("README.md", "LICENSE", "LICENSE.MIT", "AGENTS.md", "UPSTREAM.toml"):
+            shutil.copyfile(self.root / name, source / name)
+        for directory in ("docs", "skills", "examples"):
+            shutil.copytree(self.root / directory, source / directory)
+        (source / "docs" / "usage.md").write_bytes(b"usage\n")
+        (source / "target" / "release").mkdir(parents=True)
+        shutil.copyfile(self.binary, source / "target" / "release" / "cpyref")
+
+        def install_recipe(destination):
+            result = subprocess.run(
+                ["bash", "-e", "-c", 'source "$1"; pkgdir="$2"; package', "aur-layout-check",
+                 str(REPO / "packaging" / "aur" / "PKGBUILD"), str(destination)],
+                cwd=work, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+        destination = self.root / "aur-installed"
+        install_recipe(destination)
+        installed_examples = destination / "usr" / "share" / "doc" / "cpyref" / "examples"
+        self.assertEqual((installed_examples / "agentgc-handoff.sh").read_bytes(), self.example.read_bytes())
+        self.assertEqual(stat.S_IMODE((installed_examples / "agentgc-handoff.sh").stat().st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE((installed_examples / "project.toml").stat().st_mode), 0o644)
+        self.assertEqual((installed_examples / "shared.toml").read_bytes(), b"scope = 'shared'\n")
+        self.assertEqual({path.name for path in installed_examples.iterdir()},
+                         {"agentgc-handoff.sh", "project.toml", "shared.toml"})
+        (source / "examples" / "agentgc-handoff.sh").unlink()
+        older_destination = self.root / "aur-older-installed"
+        install_recipe(older_destination)
+        self.assertFalse((older_destination / "usr/share/doc/cpyref/examples/agentgc-handoff.sh").exists())
+
     @unittest.skipUnless(shutil.which("cargo"), "Cargo required for source-package privacy check")
     def test_cargo_package_excludes_private_files_with_public_resource_names(self):
         # Exercise Cargo's actual glob rules, not a Python approximation of them.
@@ -156,7 +285,8 @@ class PackagingTests(unittest.TestCase):
             '[package]\nname="cpyref-package-privacy-check"\nversion="0.0.0"\nedition="2021"\n'
             'license="MIT"\ninclude=' + json.dumps(includes) + '\n[workspace]\n')
         forbidden = ["benchmarks/private/README.md", "private/AGENTS.md", "private/LICENSE",
-                     "private/UPSTREAM.toml", "stored/c0123456789ab.ref", "target/private.txt"]
+                     "private/UPSTREAM.toml", "stored/c0123456789ab.ref", "target/private.txt",
+                     "examples/.cpyref-local/private.ref", "examples/private.txt"]
         for name in forbidden:
             p = self.root / name
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -169,6 +299,9 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("README.md", names)
         self.assertIn("docs/nested/usage.md", names)
         self.assertIn("skills/cpyref/SKILL.md", names)
+        self.assertIn("examples/agentgc-handoff.sh", names)
+        self.assertIn("examples/project.toml", names)
+        self.assertIn("examples/shared.toml", names)
         self.assertTrue(names.isdisjoint(forbidden), names.intersection(forbidden))
 
 

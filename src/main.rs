@@ -86,6 +86,14 @@ fn matches_filter(metadata: &Metadata, filter: &cli::FilterArgs) -> bool {
             .is_none_or(|s| metadata.note.as_deref().unwrap_or("").contains(s))
 }
 
+fn print_ids<'a>(ids: impl IntoIterator<Item = &'a str>) -> Result<()> {
+    let mut out = io::stdout().lock();
+    for id in ids {
+        writeln!(out, "{id}").map_err(|e| Error::io("Write references", e))?;
+    }
+    Ok(())
+}
+
 fn execute(command: Command, context: &Context) -> Result<()> {
     let store = context.store()?;
     match command {
@@ -158,19 +166,63 @@ fn execute(command: Command, context: &Context) -> Result<()> {
                     .map_err(|e| Error::io("Write stdout", e))
             }
         }
+        Command::Read {
+            id,
+            offset,
+            max_bytes,
+            lines,
+            tail,
+        } => print_json(&cpyref::inspect::read(
+            &store,
+            &id,
+            offset,
+            max_bytes,
+            lines.as_deref(),
+            tail,
+        )?),
+        Command::Find {
+            id,
+            query,
+            ignore_case,
+            offset,
+            limit,
+            max_bytes,
+            context_bytes,
+        } => print_json(&cpyref::find::find(
+            &store,
+            &id,
+            &query,
+            &cpyref::find::Options {
+                ignore_case,
+                offset,
+                limit,
+                max_bytes,
+                context_bytes,
+            },
+        )?),
         Command::Info { id } => print_json(&store.info(&id)?),
         Command::Remove { id } => store.remove(&id),
-        Command::Context => print_json(&context.report()),
+        Command::Context { store_path } => {
+            if store_path {
+                let path = cpyref::snapshot::native_text(&context.store_path)?;
+                writeln!(io::stdout().lock(), "{path}")
+                    .map_err(|e| Error::io("Write storage path", e))
+            } else {
+                print_json(&context.report())
+            }
+        }
         Command::List {
             filter,
+            kind,
             limit,
             offset,
             json: as_json,
+            ids,
         } => {
             let entries = store.list()?;
             let entries: Vec<_> = entries
                 .into_iter()
-                .filter(|m| matches_filter(m, &filter))
+                .filter(|m| matches_filter(m, &filter) && kind.is_none_or(|k| m.kind == k))
                 .collect();
             let total = entries.len();
             let shown: Vec<_> = entries
@@ -178,7 +230,9 @@ fn execute(command: Command, context: &Context) -> Result<()> {
                 .skip(offset)
                 .take(limit as usize)
                 .collect();
-            if as_json {
+            if ids {
+                print_ids(shown.iter().map(|m| m.id.as_str()))
+            } else if as_json {
                 print_json(
                     &json!({"references": shown, "total": total, "offset": offset, "limit": limit, "context": context.report()}),
                 )
@@ -218,6 +272,7 @@ fn execute(command: Command, context: &Context) -> Result<()> {
             limit,
             offset,
             json: as_json,
+            ids,
         } => {
             let matcher = cpyref::search::Matcher::new(&query, ignore_case)?;
             let entries = store
@@ -227,7 +282,9 @@ fn execute(command: Command, context: &Context) -> Result<()> {
             let hits = cpyref::search::search(&store, entries, &matcher, metadata_only)?;
             let total = hits.len();
             let shown: Vec<_> = hits.into_iter().skip(offset).take(limit as usize).collect();
-            if as_json {
+            if ids {
+                print_ids(shown.iter().map(|hit| hit.metadata.id.as_str()))
+            } else if as_json {
                 print_json(
                     &json!({"references": shown, "total": total, "offset": offset, "limit": limit,
                     "metadata_only": metadata_only, "payload_kinds": ["bytes"], "context": context.report()}),
@@ -379,6 +436,11 @@ fn run(mut cli: Cli) -> Result<u8> {
     if let Command::Receive {
         token,
         item,
+        list,
+        read,
+        offset,
+        limit,
+        max_bytes,
         output,
         force,
     } = cli.command
@@ -387,6 +449,14 @@ fn run(mut cli: Cli) -> Result<u8> {
         if let Some(name) = item {
             metadata = cpyref::bundle::item(&context.store()?, &metadata.id, &name)
                 .map_err(|e| context.annotate(e))?;
+        }
+        if list {
+            return workflows::receive_index(&context, metadata, offset, limit)
+                .map_err(|e| context.annotate(e));
+        }
+        if read {
+            return workflows::receive_preview(&context, metadata, offset, max_bytes)
+                .map_err(|e| context.annotate(e));
         }
         return workflows::receive_record(&context, metadata, output, force)
             .map_err(|e| context.annotate(e));
@@ -397,11 +467,15 @@ fn run(mut cli: Cli) -> Result<u8> {
         Command::Insert(args) | Command::Replace(args) => {
             args.id = cpyref::reference::resolve(&context, &args.id, false)?;
         }
+        Command::Handoff { id: Some(id), .. } => {
+            *id = cpyref::reference::resolve(&context, id, false)?;
+        }
         Command::Paste { id, .. }
+        | Command::Read { id, .. }
+        | Command::Find { id, .. }
         | Command::Info { id }
         | Command::Remove { id }
         | Command::Verify { id }
-        | Command::Handoff { id, .. }
         | Command::Logs { id, .. } => {
             *id = cpyref::reference::resolve(&context, id, false)?;
         }

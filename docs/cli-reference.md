@@ -2,6 +2,19 @@
 
 安装与常用操作见 [README](../README.md)，空间配置见[项目隔离与多 Agent 协作](project-spaces.md)。
 
+## 交接入口与存储发现
+
+```sh
+cpyref handoff --input HANDOFF.md --attach patch=change.patch
+cpyref context --store-path
+```
+
+第一条命令保存交接内容和关键文件，默认只输出可原样转交的短提示、完整引用和取回命令；接收方先看目录，再按需读取。已有引用的 `handoff REF` 默认仍为 JSON，可用 `--format agent` 获取短提示。完整参数、`receive --list` / `--read` 和失败恢复见[交接流程](workflows.md#一步创建交接)。
+
+`context --store-path` 只输出当前项目、scope、namespace 和 store 配置解析后选定的实际存储目录，加一个换行；不创建存储，不展开 JSON，也不扫描该目录。路径必须可精确表示为 UTF-8，否则报错，不输出有损路径。命令行的全局空间参数仍适用。路径可能尚不存在；与 agentgc 联合跟踪见[接入流程](agentgc.md)。
+
+实际程序名是 `cpyref`；“用 cpy 交接”应映射到它。POSIX 交互终端可选 `alias cpy=cpyref`，脚本保留完整程序名。一步创建、`--format agent`、`context --store-path` 和 `receive --list` / `--read` 要求 0.4.0+；已有引用的原有交接格式要求 0.3.0+。
+
 ## 管道输入
 
 ```sh
@@ -104,7 +117,7 @@ cpyref copy config.txt --text 'timeout = 30' --occurrence 2
 
 选区保存为独立的原始字节快照，不是指向原文件的动态指针。复制成功后，即使原文件被修改或删除，粘贴仍读取保存的内容。整个文件复制和行号复制不要求 UTF-8；文本匹配要求所搜索范围内的内容为 UTF-8。空格、缩进、CRLF、NUL 和非 ASCII 字符不会被重新生成或规范化。
 
-每份快照使用单个文件保存元数据和正文。先写临时文件并同步文件内容，再以不覆盖已有编号的方式发布。编号冲突时重新生成，最多重试 32 次。正常多进程使用由工具自身的每空间写锁协调，不需要模型手工协调。粘贴在输出任何内容前检查完整正文的长度和 SHA-256。`info` 只读元数据，不验证正文摘要。这些检查不是来源认证，不防止有写权限的进程同时修改正文与元数据。
+每份快照使用单个文件保存元数据和正文。先写临时文件并同步文件内容，再以不覆盖已有编号的方式发布。编号冲突时重新生成，最多重试 32 次。正常多进程使用由工具自身的每空间写锁协调，不需要模型手工协调。`paste`、`read`、`find` 在输出任何正文前检查完整正文的长度和 SHA-256。`info` 只读元数据，不验证正文摘要。这些检查不是来源认证，不防止有写权限的进程同时修改正文与元数据。
 
 默认输入上限为 16 MiB，可通过 `--max-bytes` 调整，硬上限为 128 MiB。即使只复制其中一行，输入限制仍按整个读取的输入计算。匹配扫描最多接受 10,000 个结果；正则编译大小上限为 4 MiB。输入在内存中处理，不是无限文件的流式选择器，也不承诺整个进程内存仅等于输入大小。
 
@@ -124,6 +137,7 @@ cpyref copy src/example.py --from 'def example' --to 'def next' \
 cpyref list --limit 20
 cpyref list --source 'src/' --note '修改前' --limit 20 --offset 20
 cpyref list --json
+cpyref list --kind run --ids
 
 # 只报告匹配数、位置和字节数；不写快照，也不创建存储目录
 cpyref copy src/example.py --from 'def example' --to 'def next' --exclude-end --dry-run
@@ -139,8 +153,9 @@ cpyref copy src/example.py --lines 10:20 --dry-run --show-content --preview-byte
 预览正文必须显式使用 `--show-content`；默认最多 256 个输入字节，`--preview-bytes` 范围 1–4096。正文显示使用 UTF-8 有损解码并进行 JSON 转义，可能截断多字节字符；此显示不是字节导出，精确取回请用 `paste`。`content_bytes` 是截取的输入字节数，`content_truncated` 表示是否截断。
 
 备注最多 4096 个 UTF-8 字节，作为可选元数据保存，旧快照无需迁移。默认 copy 输出仍只有短编号。
-`list` 默认输出元数据表，包含编号、来源、行范围、半开字节范围、字节数、Unix 秒时间和备注；来源与备注使用 JSON 字符串转义。默认最多 20 条，`--limit` 范围 1–1000，`--offset` 从 0 开始。按创建时间从新到旧排列，同秒按 ID 升序。`--source` 与 `--note` 是区分大小写的子串匹配，同时使用时取交集。
+`list` 默认输出元数据表，包含编号、来源、行范围、半开字节范围、字节数、Unix 秒时间和备注；来源与备注使用 JSON 字符串转义。默认最多 20 条，`--limit` 范围 1–1000，`--offset` 从 0 开始。按创建时间从新到旧排列，同秒按 ID 升序。`--source` 与 `--note` 是区分大小写的子串匹配，`--kind bytes|run|snapshot|bundle|edit-plan` 限制类型，各筛选取交集。
 `--json` 返回 `references`、筛选后的 `total`、`offset`、`limit` 和 `context`。不读取正文；损坏的元数据会报错，不会悄悄漏掉引用。
+`list --kind` 和 `--ids` 要求 0.4.0+。`--ids` 只输出本页完整编号，每行一个，无表头；筛选、排序和分页不变，不能与 `--json` 同用。空页不输出内容。
 
 ## 统计与清理
 
@@ -182,8 +197,36 @@ cpyref search '修改前' --json
 cpyref search 'def example' --source 'src/' --limit 20 --offset 0
 cpyref search 'TEST' --ignore-case --kind bytes
 cpyref search 'function' --metadata-only
+cpyref search 'timeout' --kind bytes --ids
 ```
 
-query 是 1–4096 UTF-8 字节的字面子串，默认区分大小写。匹配 ID、来源、备注、kind，以及 bytes 引用的已保存正文；run/snapshot 容器只搜元数据。查询始终限制在当前项目、scope 和 namespace，查询的是保存内容而非现在的源文件。默认只显示元数据和 matched_in，正文不展开。`--metadata-only` 跳过正文，损坏正文仍可按元数据找回编号；默认正文搜索边扫描边校验完整哈希，损坏时报 CORRUPT_REF。
+query 是 1–4096 UTF-8 字节的字面子串，默认区分大小写。匹配 ID、来源、备注、kind，以及 bytes 引用的已保存正文；其他类型只搜元数据。查询始终限制在当前项目、scope 和 namespace，查询的是保存内容而非现在的源文件。默认只显示元数据和 matched_in，正文不展开。`--metadata-only` 跳过正文，损坏正文仍可按元数据找回编号；默认正文搜索边扫描边校验完整哈希，损坏时报 CORRUPT_REF。
 
-`--source`、`--note` 为区分大小写的元数据子串筛选，`--kind bytes|run|snapshot` 限制类型；各筛选取交集。排序、limit 和 offset 与 list 相同，JSON 返回 total 和本页 references。ID 子串只能用来发现，其他操作仍需要完整 ID。搜索流式读取正文，内存有界；总耗时随选定空间中正文总量增长。
+`--source`、`--note` 为区分大小写的元数据子串筛选，`--kind` 的类型与 list 相同；各筛选取交集。排序、limit 和 offset 与 list 相同，JSON 返回 total 和本页 references。ID 子串只能用来发现，其他操作仍需要完整 ID。搜索流式读取正文，内存有界；总耗时随选定空间中正文总量增长。
+
+`search --ids` 要求 0.4.0+，与 `list --ids` 相同，只改变输出格式，不能与 `--json` 同用。`search` 用于找引用；已知编号后，用 `find` 定位该引用的正文。
+
+## 有限读取与正文定位
+
+`read` 与 `find` 要求 CpyRef 0.4.0+。
+
+```sh
+cpyref read REF
+cpyref read REF --offset 4096 --max-bytes 2048
+cpyref read REF --tail --max-bytes 1024
+cpyref read REF --lines 20:40 --max-bytes 2048
+cpyref find REF 'error' --ignore-case --limit 10 --max-bytes 2048
+cpyref copy report.txt | cpyref read - --max-bytes 512
+```
+
+`REF` 用实际完整编号替换。`read` 与 `find` 只接受 bytes 引用；其他类型报 `WRONG_KIND`，run 日志使用 `cpyref logs RUN_REF --stream stderr --tail`，见[日志查看](workflows.md#按需查看日志和关联信息)。两者始终输出 JSON，读取已保存正文，不要求原文件仍存在。即使只看少量内容，也先校验完整正文；损坏时报 `CORRUPT_REF`，不输出未校验的片段。
+
+`read` 默认从字节 `0` 开始，最多取 `4096` 个输入字节。`--offset` 是保存正文中的绝对字节位置；`--max-bytes` 范围为 1–65536。`--tail` 取正文最后最多 max-bytes 个字节，不能与 `--offset` 或 `--lines` 同用。`--lines N` 或 `--lines START:END` 选择保存正文中的行，从 1 开始、包含两端及原换行，行号不是复制前的源文件行号。`--lines` 可与 `--offset` 组合；偏移始终按绝对字节解释，并限制在该行范围的起止位置内。
+
+返回编号 `reference`、哈希 `sha256`，以及 `offset`、`next_offset`、`total_bytes`、`bytes`、`truncated`、`encoding` 和 `content`。`bytes` 是本次截取的输入字节数；`truncated` 表示所选范围还有未读内容。行选择另返回固定的绝对字节边界 `selection_start`、`selection_end`。继续读取用返回的 `next_offset` 作为 `--offset`；它始终是保存正文中的绝对字节位置，不是行号。保留同一 `--lines` 即可安全续读，例如 `cpyref read REF --lines 20:40 --offset NEXT --max-bytes 2048`，将 NEXT 替换为返回的偏移；读取不会越过该行范围，truncated=false 时结束。
+
+`find` 搜索 1–4096 UTF-8 字节的字面子串，默认区分大小写，`-i` / `--ignore-case` 忽略大小写。匹配从左到右且互不重叠；与 `copy --text` 的重叠候选规则不同。`matches` 每项返回序号 `index`、`byte_start/end`、`line_start/end`，以及 `content_start/end` 和有限的 `content`；位置都相对于保存正文。`--context-bytes` 控制每次匹配两侧的上下文，默认 80，范围 0–4096；`--max-bytes` 默认 4096，是本页所有片段合计的输入字节预算，不是每项各有一份。预算耗尽仍保留本页所选匹配的位置，并用各项的 `context_truncated` 标出省略；顶层 `content_bytes` 为实际片段字节数，`content_truncated` 汇总本页省略状态。
+
+`find --offset` 是从 0 开始的匹配序号，不是字节位置；`--limit` 限制本页返回项数，默认 20，范围 1–1000；`--max-bytes` 范围 1–65536，只限制片段字节数。find 在内存中读取、扫描完整保存正文，上限为 128 MiB，预算和分页不会减少扫描量。返回准确的匹配总数 `total`，用 `next_offset` 继续下一页，`truncated` 表示还有后续匹配，与片段预算是否耗尽分开。没有匹配时成功返回空列表。`read`、`find` 的 `REF` 均可用 `-` 从 stdin 接收一个完整编号或成功的 copy JSON；JSON 中的空间必须与当前调用一致。检查管道上游的退出状态，不把正文当编号传入。
+
+正文使用 `encoding: "utf-8-lossy"` 并进行 JSON 转义，二进制或截断的多字节字符可能显示为替代字符。输入字节预算不等于模型 Token 预算，也不限制 JSON 封装后的总长度。预览不能用于精确复制；保留原始字节请用 `cpyref paste REF --output FILE`。

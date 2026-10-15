@@ -6,7 +6,8 @@ use std::path::PathBuf;
 #[command(
     version,
     about = "Copy exact bytes once. Paste them by a short reference.",
-    after_help = "Examples:\n  cpyref copy source.txt | cpyref paste - --output destination.txt\n  cpyref copy source.rs --lines 10:20 | cpyref insert - target.rs --at-end --plan\n  cpyref apply PLAN_ID  (use the returned plan ID; keep the same space)"
+    before_help = "Agent handoff: notes -> attach key files -> forward the returned retrieval block\n  cpyref handoff --input HANDOFF.md --attach patch=change.patch\n  cat HANDOFF.md | cpyref handoff --input -\n  For pipes, set -o pipefail to preserve producer failures.\n  The next agent lists the package first, then reads only selected items.\n  Same host and accessible original storage required; saved files are historical snapshots.",
+    after_help = "Copy exact bytes:\n  cpyref copy source.txt | cpyref paste - --output destination.txt\n\nAgent shorthand: 'cpy' means cpyref; optional POSIX interactive alias: alias cpy=cpyref"
 )]
 pub struct Cli {
     #[command(flatten)]
@@ -18,11 +19,25 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Restore a complete handoff reference, ignoring local context settings; verify its hash first.
+    #[command(group(clap::ArgGroup::new("receive_view").args(["list", "read"])))]
     Receive {
         token: String,
         /// Select one named item when receiving a bundle.
         #[arg(long)]
         item: Option<String>,
+        /// Show a bounded package directory or metadata, never payload bytes.
+        #[arg(long, conflicts_with_all = ["item", "output"])]
+        list: bool,
+        /// Inspect byte references as bounded JSON, including a selected package item.
+        #[arg(long, conflicts_with = "output")]
+        read: bool,
+        /// Directory entry offset with --list; saved byte offset with --read.
+        #[arg(long, default_value_t = 0, requires = "receive_view")]
+        offset: u64,
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=100), requires = "list")]
+        limit: u32,
+        #[arg(long, default_value_t = 4096, value_parser = clap::value_parser!(u32).range(1..=65536), requires = "read")]
+        max_bytes: u32,
         #[arg(short, long)]
         output: Option<PathBuf>,
         #[arg(long, requires = "output")]
@@ -70,6 +85,9 @@ pub enum Command {
         limit: u32,
         #[arg(long, default_value_t = 4096, value_parser = clap::value_parser!(u32).range(1..=65536))]
         max_bytes: u32,
+        /// Show the last --max-bytes bytes of the selected log stream.
+        #[arg(long, requires = "stream", conflicts_with_all = ["offset", "failed", "check", "view", "output"])]
+        tail: bool,
         /// Export the complete stream as exact bytes, protecting existing output files.
         #[arg(long, requires = "stream", conflicts_with = "failed")]
         output: Option<PathBuf>,
@@ -80,11 +98,24 @@ pub enum Command {
     Snapshot(SnapshotArgs),
     /// Check whether copied bytes still match their original source position.
     Verify { id: String },
-    /// Generate a complete same-host retrieval command or structured handoff.
+    /// Hand notes and key files to the next agent in one step, or forward a saved reference.
+    #[command(display_order = 0)]
     Handoff {
-        id: String,
-        #[arg(long, default_value = "json", value_parser = ["json", "ref", "sh", "powershell"])]
-        format: String,
+        /// Existing reference, or - for a reference pipe. Omit when using --input.
+        #[arg(required_unless_present = "input", conflicts_with_all = ["input", "attach", "max_bytes"])]
+        id: Option<String>,
+        /// Handoff notes file, or - to read raw notes from stdin. Saves a notes item.
+        #[arg(long)]
+        input: Option<PathBuf>,
+        /// Add a key file as NAME=FILE; repeat up to 99 times. The name notes is reserved.
+        #[arg(long, requires = "input")]
+        attach: Vec<String>,
+        /// Combined notes and attachment byte limit (default 16 MiB; hard maximum 128 MiB).
+        #[arg(long, default_value_t = DEFAULT_MAX_BYTES, requires = "input")]
+        max_bytes: usize,
+        /// Default: agent when creating from --input, json when forwarding an existing reference.
+        #[arg(long, value_parser = ["agent", "json", "ref", "sh", "powershell"])]
+        format: Option<String>,
     },
     /// Save a unique selection; print only its short reference by default.
     #[command(display_order = 1)]
@@ -100,6 +131,42 @@ pub enum Command {
         #[arg(long, requires = "output")]
         force: bool,
     },
+    /// Inspect saved bytes as bounded JSON; use paste --output for exact-byte export.
+    Read {
+        /// Complete reference, or - to read a reference from a pipe.
+        id: String,
+        /// Byte offset within the saved reference, not the original source file.
+        #[arg(long, default_value_t = 0, conflicts_with = "tail")]
+        offset: u64,
+        /// Maximum input bytes to display; JSON escaping may increase output size.
+        #[arg(long, default_value_t = 4096, value_parser = clap::value_parser!(u32).range(1..=65536))]
+        max_bytes: u32,
+        /// One-based inclusive lines of the saved reference: N or START:END.
+        #[arg(long, conflicts_with = "tail")]
+        lines: Option<String>,
+        /// Show the last --max-bytes bytes of the saved reference.
+        #[arg(long)]
+        tail: bool,
+    },
+    /// Locate literal text inside one saved reference, with bounded context and positions.
+    Find {
+        /// Complete reference, or - to read a reference from a pipe.
+        id: String,
+        query: String,
+        #[arg(short = 'i', long)]
+        ignore_case: bool,
+        /// Number of matches to skip, not a byte offset.
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=1000))]
+        limit: u32,
+        /// Total input-byte budget for excerpts across all returned matches.
+        #[arg(long, default_value_t = 4096, value_parser = clap::value_parser!(u32).range(1..=65536))]
+        max_bytes: u32,
+        /// Input bytes of context on each side of a match.
+        #[arg(long, default_value_t = 80, value_parser = clap::value_parser!(u32).range(0..=4096))]
+        context_bytes: u32,
+    },
     /// Print JSON metadata without expanding the copied content.
     #[command(display_order = 6)]
     Info { id: String },
@@ -108,17 +175,26 @@ pub enum Command {
     Remove { id: String },
     /// Show the selected project, namespace, store, and config files; never creates a store.
     #[command(display_order = 7)]
-    Context,
+    Context {
+        /// Print only the exact selected storage directory; never creates it.
+        #[arg(long)]
+        store_path: bool,
+    },
     /// List metadata in this space, newest first; never expand payloads.
     List {
         #[command(flatten)]
         filter: FilterArgs,
+        #[arg(long, value_enum)]
+        kind: Option<RecordKind>,
         #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=1000))]
         limit: u32,
         #[arg(long, default_value_t = 0)]
         offset: usize,
         #[arg(long)]
         json: bool,
+        /// Print only full reference IDs, one per line, without a header.
+        #[arg(long, conflicts_with = "json")]
+        ids: bool,
     },
     /// Find saved references by ID, source, note or exact copied text, without expanding bodies.
     Search {
@@ -138,6 +214,9 @@ pub enum Command {
         offset: usize,
         #[arg(long)]
         json: bool,
+        /// Print only matching full reference IDs, one per line, without a header.
+        #[arg(long, conflicts_with = "json")]
+        ids: bool,
     },
     /// Show counts, sizes and age buckets for this space without reading payloads.
     Stats,

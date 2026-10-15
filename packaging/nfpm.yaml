@@ -70,6 +70,10 @@ contents:
     dst: /usr/share/doc/cpyref/skills/cpyref
     type: tree
     expand: true
+  - src: ${CPYREF_EXAMPLES}
+    dst: /usr/share/doc/cpyref/examples
+    type: tree
+    expand: true
 
 deb:
   compression: xz

@@ -15,7 +15,21 @@ cpyref --version
 
 源码安装：`cargo install --git https://github.com/LIghtJUNction/cpyref --locked`。
 无 Rust 环境的安装包与 AUR 用法见[安装与发布](docs/releases.md)。
-Agent 可安装 [skills/cpyref](skills/cpyref/SKILL.md)，按需读取子命令的 `--help`。交接功能要求 0.3.0+；编号管道和编辑计划要求 0.3.1+。
+Agent 可安装 [skills/cpyref](skills/cpyref/SKILL.md)，按需读取子命令的 `--help`。已有引用交接要求 0.3.0+；编号管道和编辑计划要求 0.3.1+；一步交接、有限读取、正文定位和存储路径发现要求 0.4.0+。
+
+## 一步交接给下一位 Agent
+
+**写交接内容 → 附加关键文件 → 转交取回命令。**
+
+```sh
+cpyref handoff --input HANDOFF.md --attach patch=change.patch
+```
+
+交接内容保存为 `notes`，附件按名称保存。默认输出可原样转交的短提示和完整取回命令，不展开正文；接收方先看目录，再按需少量读取或精确导出。只有交接内容时省略 `--attach`。生成的是历史快照，后续修改原文件不会更新它。
+
+这是**同机引用**：下一位 Agent 必须能访问原存储和相应项目目录；跨机需要另行传输材料。发送方的一步创建及短提示、接收方的 `--list` / `--read` 均要求 0.4.0+。参数、stdin 输入、已有引用与失败恢复见[交接流程](docs/workflows.md#一步创建交接)。与 agentgc 联合使用时，先发现存储位置，再跟踪选定目录，见[可复制接入流程](docs/agentgc.md)。
+
+用户说“用 cpy 交接”时，Agent 应调用实际程序 `cpyref`。想在 POSIX 交互终端少打几个字，可选用 `alias cpy=cpyref`；脚本仍写 `cpyref`，无需安装全局别名。
 
 ## 复制与粘贴
 
@@ -44,6 +58,20 @@ cat file.txt | cpyref copy
 
 四类主选择器不能混用。多个匹配会报 `AMBIGUOUS`，应缩小范围；不要自动选择第一个。完整规则、预览、错误码见[命令参考](docs/cli-reference.md)。
 
+## 只看需要的内容
+
+```sh
+cpyref read REF --lines 20:40 --max-bytes 2048
+cpyref read REF --tail --max-bytes 1024
+cpyref find REF 'error' --ignore-case --max-bytes 2048
+cpyref list --kind run --ids
+cpyref search 'timeout' --ids
+```
+
+`REF` 用实际完整编号替换。`read` 默认最多读取 4096 个输入字节；续读时保留 `--lines`，将返回的 `next_offset` 传给 `--offset`，内容始终限于所选行。`find` 在内存中扫描完整保存正文（最多 128 MiB），只返回匹配位置和有限上下文。两者不依赖原文件。`--ids` 每行只输出一个编号，便于继续交给工具处理。
+
+以上 `read`、`find`、`--ids`、`list --kind` 和 `logs --tail` 要求 0.4.0+。预算按输入字节计算，不是模型 Token 数；JSON 转义与有损解码可能扩大输出。精确落盘仍用 `paste --output`，不要从预览重建原文。参数与分页规则见[有限读取与正文定位](docs/cli-reference.md#有限读取与正文定位)。
+
 ## 少传编号，不抄哈希
 
 以下流程从 0.3.1 起提供：
@@ -71,7 +99,9 @@ cpyref apply PLAN_ID
 
 | 任务 | 命令或参考 |
 | --- | --- |
-| 查看、查找、清理 | `info`、`list`、`search`、`stats`、`remove`、`clean`；[命令参考](docs/cli-reference.md) |
+| 看元数据、找引用 | `info`、`list --ids`、`search --ids`；[命令参考](docs/cli-reference.md) |
+| 少量读取、定位正文 | `read`、`find`；[有限读取与正文定位](docs/cli-reference.md#有限读取与正文定位) |
+| 统计、清理 | `stats`、`remove`、`clean`；[命令参考](docs/cli-reference.md) |
 | 插入或替换 | `cpyref insert/replace ... --plan`、`cpyref apply PLAN_ID`；[编辑计划](docs/easy-edits.md)；[底层写入](docs/hardening.md) |
 | 保存测试日志、核对来源 | `run`、`logs`、`snapshot`、`verify`；[工作流](docs/workflows.md) |
 | 交接引用或命名包 | `handoff`、`receive`、`bundle`；[工作流](docs/workflows.md) |

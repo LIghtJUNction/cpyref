@@ -87,6 +87,14 @@ def release_entries(root, binary, name, windows):
                 entries.append((regular_file(source), relative, 0o644))
     regular_file(root / "skills" / "cpyref" / "SKILL.md")
     regular_file(root / "skills" / "cpyref" / "agents" / "openai.yaml")
+    examples = root / "examples"
+    if examples.is_symlink() or not examples.is_dir():
+        raise ValueError(f"expected a resource directory, not a symlink: {examples}")
+    entries.append((None, PurePosixPath(name, "examples"), 0o755))
+    # Example users can create local stores here. Ship only retained resources,
+    # never arbitrary files or snapshots beside the documented examples.
+    for filename, mode in (("agentgc-handoff.sh", 0o755), ("project.toml", 0o644), ("shared.toml", 0o644)):
+        entries.append((regular_file(examples / filename), PurePosixPath(name, "examples", filename), mode))
     return entries
 
 
@@ -183,10 +191,10 @@ def create_linux_packages(root, binary, target, version, out_dir, nfpm):
     with tempfile.TemporaryDirectory(prefix=".cpyref-nfpm-", dir=out_dir) as temporary:
         # nFPM's tree mode applies one file_info mode to both files and dirs.
         # Stage validated resources with explicit modes so checkout permissions
-        # or a restrictive umask cannot make installed docs/skills unreadable.
+        # or a restrictive umask cannot make installed resources unusable.
         content_root = Path(temporary) / "content"
         for source, relative, mode in entries:
-            if len(relative.parts) < 2 or relative.parts[1] not in ("docs", "skills"):
+            if len(relative.parts) < 2 or relative.parts[1] not in ("docs", "skills", "examples"):
                 continue
             destination = content_root.joinpath(*relative.parts[1:])
             if source is None:
@@ -197,6 +205,7 @@ def create_linux_packages(root, binary, target, version, out_dir, nfpm):
         environment.update(
             CPYREF_DOCS=str((content_root / "docs").resolve()),
             CPYREF_SKILL=str((content_root / "skills" / "cpyref").resolve()),
+            CPYREF_EXAMPLES=str((content_root / "examples").resolve()),
         )
         staged = []
         for (packager, _), destination in zip(formats, destinations):

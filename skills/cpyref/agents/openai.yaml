@@ -1,7 +1,7 @@
 interface:
   display_name: "CpyRef"
-  short_description: "Preserve exact bytes and share them by reference"
-  default_prompt: "Use $cpyref to copy the requested content exactly and hand off its reference with the matching project context."
+  short_description: "Hand off notes and files; retrieve only needed bytes"
+  default_prompt: "Use $cpyref (the executable is cpyref, also when I say cpy) to hand off notes and key files in one step. Forward its short retrieval prompt; list the package and read only needed excerpts. Preserve exact bytes and project context. References require same-machine access and contain historical snapshots."
 
 policy:
   allow_implicit_invocation: true

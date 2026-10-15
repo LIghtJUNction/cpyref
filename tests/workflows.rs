@@ -214,6 +214,46 @@ fn run_retains_both_streams_and_preserves_child_exit() {
 }
 
 #[test]
+fn log_tail_reads_only_the_selected_stream_and_rejects_conflicting_modes() {
+    let f = Fixture::new();
+    fs::write(f.source("log"), b"many lines\r\nfinish\0\xff\r\n").unwrap();
+    let bytes = f.copy("log", &[]);
+    let result = success(f.child_run(&[], &["paste", &bytes]));
+    let id = run_reference(&result);
+    let tail = f.json(&[
+        "logs",
+        id,
+        "--stream",
+        "stdout",
+        "--tail",
+        "--max-bytes",
+        "4",
+    ]);
+    assert_eq!(tail["content"], "\0\u{fffd}\r\n");
+    assert_eq!(tail["bytes"], 4);
+    assert_eq!(tail["next_offset"], tail["total_bytes"]);
+    assert_eq!(tail["truncated"], false);
+    let empty = f.json(&["logs", id, "--stream", "stderr", "--tail"]);
+    assert_eq!(empty["bytes"], 0);
+    assert_eq!(empty["offset"], 0);
+    assert_eq!(empty["content"], "");
+    assert_eq!(empty["truncated"], false);
+    for flags in [
+        vec!["--offset", "0"],
+        vec!["--failed"],
+        vec!["--check"],
+        vec!["--view", "summary"],
+        vec!["--output", "no-export"],
+    ] {
+        let mut args = vec!["logs", id, "--stream", "stdout", "--tail"];
+        args.extend(flags);
+        failure(f.run(&args), "INVALID_ARGUMENT");
+    }
+    failure(f.run(&["logs", id, "--tail"]), "INVALID_ARGUMENT");
+    assert!(!f.source("no-export").exists());
+}
+
+#[test]
 fn cargo_parser_separates_skips_and_keeps_failure_context() {
     let f = Fixture::new();
     let log = "running 3 tests\ntest pass ... ok\ntest skip ... ignored\ntest bad ... FAILED\n\n---- bad stdout ----\nthread 'bad' panicked at src/a.rs:12:3:\nexpected 1, got 2\n\ntest result: FAILED. 1 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s\n";

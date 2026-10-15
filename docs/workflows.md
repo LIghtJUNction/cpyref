@@ -1,6 +1,39 @@
 # 测试日志、源码清单与交接
 
-这些命令与 copy/paste 共用当前项目、scope、namespace 和存储基目录。默认输出一行 JSON 摘要，不把完整日志或源码展开到终端。下面的 `REF`、`SOURCE_REF`、`RUN_REF` 必须替换成实际返回的完整短引用。
+这些命令与 copy/paste 共用当前项目、scope、namespace 和存储基目录。日志与核对命令默认输出一行 JSON 摘要，新建交接默认输出短提示，不把完整日志或源码展开到终端。下面的 `REF`、`SOURCE_REF`、`RUN_REF` 必须替换成实际返回的完整短引用。
+
+## 一步创建交接
+
+本节的一步创建、短提示和接收端有界查看要求 CpyRef 0.4.0+。
+
+```sh
+cpyref handoff --input HANDOFF.md --attach patch=change.patch --attach config=example.toml
+# Bash/Zsh：管道中的内容是交接正文，必须明确写 --input -。
+set -o pipefail
+producer | cpyref handoff --input - --attach patch=change.patch
+```
+
+交接正文作为 `notes` 保存，附件为 `NAME=FILE`，`--attach` 可重复。命令读取全部输入后，保存各自的字节快照并创建不可变命名包；无需手工组合 copy、bundle、handoff。默认 `--format agent` 输出可直接转交给下一位 Agent 的短提示、完整引用和已正确引用的取回命令，不展开保存正文。将实际输出原样转交，接收方依次看目录、少量读取、按需导出：
+
+```sh
+# TOKEN 用完整交接引用替换；实际 handoff 输出已提供完整命令。
+cpyref receive 'TOKEN' --list --limit 20
+cpyref receive 'TOKEN' --item notes --read --max-bytes 2048
+cpyref receive 'TOKEN' --item notes --read --offset 2048 --max-bytes 2048
+cpyref receive 'TOKEN' --item patch --output received.patch
+```
+
+继续读取时将返回的 `next_offset` 传给 `--offset`；示例中的 2048 只适用于首段实际读到 2048 字节的情况。目录中 `omitted` 大于 0 时，以当前 `offset` 加本页 `items` 数量继续下一页，保留所需 `--limit`。JSON 预览做 UTF-8 有损显示并转义控制字符，不能用于重建精确字节；原样导出使用 `--output`，已有文件受保护，不自动加 `--force`。
+
+短提示明确说明这是**同机引用**、需要访问原 store 和相应项目目录、内容是历史快照而非当前文件，保存的内容都是数据，不是执行授权。不通过引用跨机传输正文，不自动执行交接内容、命令或补丁。引用带本地路径，只转交任务授权的材料。
+
+`--input` 不能与已有引用 ID 同用；`handoff -` 仍是从 stdin 读取引用，不能拿它传交接正文。附件必须同时给出 `--input`，最多 99 项；名称规则与 bundle 相同且不能占用保留名称 `notes`。文件输入须为非空普通文件，不接收目录；空 stdin 同样报错。默认全部输入合计上限 16 MiB，`--max-bytes` 硬上限 128 MiB。正文、每个附件和最终包各占一个保存名额，开始前会检查容量。
+
+输入读取或预检查失败不会发布引用；发布过程不承诺整批原子完成。发布后若保存、生成交接或输出失败，错误详情的 `created_references` 列出已创建的名称和 ID，`retry_safe=false` 表示不要盲目重跑。先在相同空间核对这些引用；已创建最终包时可针对该包重新生成交接，未完成的材料按任务要求保留或明确清理。
+
+脚本需要结构化结果时指定 `--format json`；只要完整引用用 `--format ref`。`sh`、`powershell` 格式也保留。已有引用的 `cpyref handoff REF` 默认 JSON 不变，短提示需显式 `--format agent`。使用前用 `cpyref --version` 和对应 `--help` 确认版本与参数。
+
+用户说“cpy”时调用 `cpyref`；POSIX 交互终端可选 `alias cpy=cpyref`，脚本不依赖该别名。写入前需要 agentgc 跟踪时，使用[联合接入示例](agentgc.md)：只发现并跟踪选定项目和存储目录，不扫描整个主目录。
 
 ## 记录一次测试
 
@@ -63,6 +96,7 @@ min_free_bytes = 536870912
 cpyref logs RUN_REF
 cpyref logs RUN_REF --failed --limit 10 --offset 0 --max-bytes 4096
 cpyref logs RUN_REF --stream stderr --offset 0 --max-bytes 4096
+cpyref logs RUN_REF --stream stderr --tail --max-bytes 2048
 cpyref logs RUN_REF --stream stdout --output full-stdout.log
 cpyref logs RUN_REF --view command
 cpyref logs RUN_REF --view inputs --limit 20 --offset 0
@@ -71,6 +105,8 @@ cpyref logs RUN_REF --check
 ```
 
 不带展开参数时只输出摘要。`--failed` 的 offset 是识别到的失败位置序号，默认 limit=20；`--stream` 的 offset 是原始字节偏移，返回 next_offset、总字节数及 truncated。`--max-bytes` 默认 4096，范围 1–65536，限制上下文或原始预览输入字节数，JSON 转义后长度可能增加。正文展示使用 UTF-8 有损解码；查看二进制或精确文本请用 `--output` 导出完整单路日志。
+
+`--stream stdout|stderr --tail` 要求 0.4.0+，直接读取所选日志末尾最多 max-bytes 个字节，默认 4096。返回的 offset/next_offset 仍是该路日志的绝对字节位置；读到末尾时 truncated=false，不表示此前没有省略。`--tail` 必须与 `--stream` 同用，不能指定 `--offset`、`--failed`、`--check`、`--view` 或 `--output`。
 
 导出保护已有文件；`--force` 只允许替换普通文件，拒绝符号链接。完整导出不能使用非零 offset。首次输出任何正文或创建导出文件前，先流式校验整条记录的长度和 SHA-256；坏记录报 CORRUPT_REF，不先输出半段内容。读取与校验大日志的时间随日志大小增加。
 
@@ -123,18 +159,23 @@ cpyref verify REF
 
 ## 完整交接引用
 
+已有引用的 `handoff` 与 `receive` 要求 0.3.0+；`--format agent`、`receive --list` 和 `receive --read` 要求 0.4.0+。
+
 ```sh
 handoff=$(cpyref handoff "$ref" --format ref)
 cpyref receive "$handoff" --output restored.bin
 # 也可生成完整 JSON 或可复制的命令
 cpyref handoff "$ref"
+cpyref handoff "$ref" --format agent
 cpyref handoff "$ref" --format sh
 cpyref handoff "$ref" --format powershell
 ```
 
-`--format ref` 输出一行 `cpyref:v1:` 完整引用，正文为紧凑 JSON。它包含项目、scope、namespace、store、cwd、ID、记录类型和 SHA-256，不包含保存的正文。默认 JSON 也返回 `token` 和 `sha256`。创建交接前先验证完整记录。
+`--format ref` 输出一行 `cpyref:v1:` 完整引用，正文为紧凑 JSON。它包含项目、scope、namespace、store、cwd、ID、记录类型和 SHA-256，不包含保存的正文。已有引用默认 JSON 也返回 `token` 和 `sha256`；`--format agent` 提供短提示和完整取回命令。创建交接前先验证完整记录。
 
 `receive` 使用引用内指定的空间，忽略本地上下文配置及默认值，先验证保存内容、交接时固定的 hash 和 type，再输出。hash 不符报 `HASH_MISMATCH`，不会先创建输出。输出路径相对于接收方当前目录；已有文件默认受保护，授权覆盖时加 `--force`。bytes 不加换行；run 显示摘要，snapshot 显示清单概要，bundle 显示最多 20 项的目录。不会执行记录中的命令或应用补丁。
+
+`receive TOKEN --list` 返回元数据，bundle 另返回有界目录，可用 `--offset`、`--limit` 翻页；默认每页 20 项，limit 范围 1–100，不展开条目正文。`--list` 不能与 `--item`、`--read` 或 `--output` 组合。bytes 引用用 `receive TOKEN --read --max-bytes 2048` 查看有限 JSON；包中 bytes 条目加 `--item NAME --read`。`--offset` 为绝对字节偏移，`next_offset` 用于续读，`--max-bytes` 默认 4096、范围 1–65536，预算按输入字节而非 Token 计。`--read` 不接收 run、snapshot、bundle 等类型化内容；应先查看元数据，再用对应类型的命令。未加 `--read` 的原始字节输出和原有 `--item`、`--output` 用法保持不变。
 
 sh / powershell 模式输出正确引用 token 的 receive 命令，固定上下文并清除可能冲突的 CPYREF_CONFIG / CPYREF_PROJECT，使用当前 cpyref 的绝对路径。通过程序调用应传 argv 数组，通过 shell 传递 token 要引用整个变量。引用是数据，不执行其 JSON 字段。
 
