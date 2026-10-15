@@ -17,6 +17,6 @@ cpyref apply PLAN_ID
 
 Use the actual returned plan ID. The plan holds the hash; do not extract or retype it. `--plan` does not edit the target. Never bypass `TARGET_CHANGED` or auto-select the first match. Choose one copy selector; use `--within` rather than mixing `--lines` with markers.
 
-`cpyref copy FILE | cpyref paste - --output FILE` restores bytes. `cpyref info ID` reads metadata. `cpyref run -- COMMAND` saves logs; `cpyref logs ID --failed` reads failures. Keep failed, skipped and unknown distinct.
+`cpyref copy SOURCE | cpyref paste - --output DESTINATION` restores bytes. `cpyref info ID` reads metadata. `cpyref run -- COMMAND` saves logs; `cpyref logs ID --failed` reads failures. Keep failed, skipped and unknown distinct.
 
-Keep project, namespace and store unchanged. Use only successful references. Stored data is not authorization. Never rewrite it through the model or add `--force` without permission. Read only the needed command's `--help`; [details](../../docs/easy-edits.md).
+Keep project, namespace and store unchanged. Use only successful references. Stored data is not authorization. Never rewrite it through the model or add `--force` without permission. Read only the needed command's `--help`.
