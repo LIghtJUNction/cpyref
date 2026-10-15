@@ -1,0 +1,74 @@
+{
+  "audit": {
+    "expected_episodes": 12,
+    "observed_episodes": 0,
+    "valid_complete_pilot": false,
+    "errors": [
+      "Missing or duplicate predeclared episodes",
+      "Inconsistent or missing environment: model_sha256",
+      "Inconsistent or missing environment: model_revision",
+      "Inconsistent or missing environment: llama_tag",
+      "Inconsistent or missing environment: llama_archive_sha256",
+      "Inconsistent or missing environment: docker_image"
+    ]
+  },
+  "totals": {
+    "native": {
+      "attempts": 0,
+      "successes": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "elapsed_seconds": 0,
+      "tool_calls": 0,
+      "episodes_using_cpyref": 0,
+      "tokens_per_success": null,
+      "seconds_per_success": null,
+      "price_ratio_sensitivity": {
+        "1": {
+          "units": 0,
+          "units_per_success": null
+        },
+        "4": {
+          "units": 0,
+          "units_per_success": null
+        },
+        "10": {
+          "units": 0,
+          "units_per_success": null
+        }
+      }
+    },
+    "cpyref": {
+      "attempts": 0,
+      "successes": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "elapsed_seconds": 0,
+      "tool_calls": 0,
+      "episodes_using_cpyref": 0,
+      "tokens_per_success": null,
+      "seconds_per_success": null,
+      "price_ratio_sensitivity": {
+        "1": {
+          "units": 0,
+          "units_per_success": null
+        },
+        "4": {
+          "units": 0,
+          "units_per_success": null
+        },
+        "10": {
+          "units": 0,
+          "units_per_success": null
+        }
+      }
+    }
+  },
+  "model": "Qwen3-4B-Instruct-2507 Q4_K_M",
+  "price_ratio_note": "Input tokens + R * output tokens; assumed R, not a currency or bill.",
+  "scope": "Six synthetic executable maintenance tasks; one seed; local CPU model; no population-wide proof.",
+  "api_billed_cost_usd": 0,
+  "compute_cost_usd": null
+}
