@@ -1,0 +1,66 @@
+{
+  "experiment_run": "38671711888",
+  "expected_attempts": 12,
+  "observed_attempts": 12,
+  "trace_accounting_consistent": true,
+  "accounting_errors": [],
+  "incomplete_inference": [
+    {"task": "extract_table", "arm": "native", "turn": 2, "error": "timed out"},
+    {"task": "extract_table", "arm": "cpyref", "turn": 1, "error": "timed out"},
+    {"task": "sync_config", "arm": "native", "turn": 2, "error": "timed out"}
+  ],
+  "full_cost_comparison_valid": false,
+  "efficacy_claim_supported": false,
+  "interpretation": "Not an efficiency proof. Preserve failed attempts and missing token usage; do not infer copying-tool benefit from a success without tool invocation.",
+  "totals": {
+    "native": {
+      "attempts": 6,
+      "accepted_by_frozen_checks": 0,
+      "completed_inference_but_failed_acceptance": 4,
+      "incomplete_inference_attempts": 2,
+      "usage_complete_attempts": 4,
+      "input_tokens_received": 17887,
+      "output_tokens_received": 1715,
+      "received_token_counts_are_lower_bounds": true,
+      "full_input_tokens": null,
+      "full_output_tokens": null,
+      "model_requests": 25,
+      "model_responses": 23,
+      "tool_calls": 21,
+      "attempts_invoking_cpyref": 0,
+      "accepted_attempts_invoking_cpyref": 0,
+      "sum_attempt_seconds_including_acceptance": 1259.4780918930003,
+      "full_tokens_per_accepted_task": null,
+      "monetary_cost_usd": null
+    },
+    "cpyref": {
+      "attempts": 6,
+      "accepted_by_frozen_checks": 1,
+      "completed_inference_but_failed_acceptance": 4,
+      "incomplete_inference_attempts": 1,
+      "usage_complete_attempts": 5,
+      "input_tokens_received": 33476,
+      "output_tokens_received": 1737,
+      "received_token_counts_are_lower_bounds": true,
+      "full_input_tokens": null,
+      "full_output_tokens": null,
+      "model_requests": 27,
+      "model_responses": 26,
+      "tool_calls": 26,
+      "attempts_invoking_cpyref": 2,
+      "accepted_attempts_invoking_cpyref": 0,
+      "sum_attempt_seconds_including_acceptance": 1775.742469555,
+      "full_tokens_per_accepted_task": null,
+      "monetary_cost_usd": null
+    }
+  },
+  "accepted_attempt": {
+    "task": "labels_logic",
+    "arm": "cpyref",
+    "cpyref_shell_turns": 0,
+    "edit_method": "shell heredoc writes labels.py",
+    "claim_boundary": "Passed the frozen acceptance checks; this does not attribute success to CpyRef's copy/paste operations."
+  },
+  "archival_report_note": "The original workflow summary.json and REPORT.md are retained as generated. Their token totals and price-ratio units sum only received usage. Because the completeness audit failed, they are lower bounds, not complete billed cost or valid per-success cost. Use this audit summary and FINDINGS.md for interpretation.",
+  "reproduce_audit": "python benchmarks/engineering_pilot/audit_results.py benchmarks/engineering_pilot/results/38671711888"
+}
