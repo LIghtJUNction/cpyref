@@ -1,5 +1,9 @@
 //! Read one reference, not payload bytes, from a CLI pipe.
-use crate::{context::Context, error::{Error, Result}, store::valid_id};
+use crate::{
+    context::Context,
+    error::{Error, Result},
+    store::valid_id,
+};
 use serde::Deserialize;
 use serde_json::Value;
 use std::io::{self, IsTerminal, Read};
@@ -33,12 +37,15 @@ pub fn resolve(context: &Context, value: &str, plan: bool) -> Result<String> {
 
 fn read(context: &Context, input: impl Read, plan: bool) -> Result<String> {
     let mut bytes = Vec::new();
-    input.take(MAX_INPUT + 1).read_to_end(&mut bytes)
+    input
+        .take(MAX_INPUT + 1)
+        .read_to_end(&mut bytes)
         .map_err(|e| Error::io("Read piped reference", e))?;
     if bytes.len() as u64 > MAX_INPUT {
         return Err(invalid());
     }
-    let text = std::str::from_utf8(&bytes).map_err(|_| invalid())?
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|_| invalid())?
         .trim_matches(|c: char| c.is_ascii_whitespace());
     if valid_id(text) {
         return Ok(text.to_owned());
@@ -49,9 +56,14 @@ fn read(context: &Context, input: impl Read, plan: bool) -> Result<String> {
     }
     let current = context.report();
     // JSON describes a space; it must never redirect the reader into that space.
-    for key in ["scope", "namespace", "project_root", "store_base", "store_path"] {
-        if envelope.context.get(key).is_none()
-            || envelope.context.get(key) != current.get(key) {
+    for key in [
+        "scope",
+        "namespace",
+        "project_root",
+        "store_base",
+        "store_path",
+    ] {
+        if envelope.context.get(key).is_none() || envelope.context.get(key) != current.get(key) {
             return Err(Error::new("REF_CONTEXT", 4,
                 "Piped reference belongs to a different space. Keep the original project, namespace, and store; no automatic switch was made."));
         }
@@ -59,7 +71,13 @@ fn read(context: &Context, input: impl Read, plan: bool) -> Result<String> {
     let id = if plan {
         envelope.plan.as_deref()
     } else {
-        envelope.reference.as_ref().and_then(|r| r.get("id")).and_then(Value::as_str)
-    }.filter(|id| valid_id(id)).ok_or_else(invalid)?;
+        envelope
+            .reference
+            .as_ref()
+            .and_then(|r| r.get("id"))
+            .and_then(Value::as_str)
+    }
+    .filter(|id| valid_id(id))
+    .ok_or_else(invalid)?;
     Ok(id.to_owned())
 }

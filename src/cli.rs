@@ -5,7 +5,8 @@ use std::path::PathBuf;
 #[derive(Debug, Parser)]
 #[command(
     version,
-    about = "Copy exact bytes once. Paste them by a short reference."
+    about = "Copy exact bytes once. Paste them by a short reference.",
+    after_help = "Examples:\n  cpyref copy source.txt | cpyref paste - --output destination.txt\n  cpyref copy source.rs --lines 10:20 | cpyref insert - target.rs --at-end --plan\n  cpyref apply PLAN_ID  (use the returned plan ID; keep the same space)"
 )]
 pub struct Cli {
     #[command(flatten)]
@@ -33,9 +34,20 @@ pub enum Command {
         command: BundleCommand,
     },
     /// Insert saved bytes at one explicit target position. Writing requires a target hash.
+    #[command(display_order = 3)]
     Insert(Box<cpyref::edit::Args>),
     /// Replace a unique target selection with saved bytes. Writing requires a target hash.
+    #[command(display_order = 4)]
     Replace(Box<cpyref::edit::Args>),
+    /// Apply a saved edit plan; its source and target hashes are checked automatically.
+    #[command(display_order = 5)]
+    Apply {
+        /// Complete plan ID, or - to read the ID/plan JSON from a pipe.
+        id: String,
+        /// Recheck the plan and preview it without writing.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Run a command, retain complete local logs, and print only a bounded JSON summary.
     Run(RunArgs),
     /// Inspect a saved run; expand logs only with an explicit stream or --failed.
@@ -75,8 +87,10 @@ pub enum Command {
         format: String,
     },
     /// Save a unique selection; print only its short reference by default.
+    #[command(display_order = 1)]
     Copy(Box<CopyArgs>),
     /// Write the saved bytes, without adding a newline.
+    #[command(display_order = 2)]
     Paste {
         id: String,
         /// Write to a file instead of stdout. Existing files are protected by default.
@@ -87,11 +101,13 @@ pub enum Command {
         force: bool,
     },
     /// Print JSON metadata without expanding the copied content.
+    #[command(display_order = 6)]
     Info { id: String },
     /// Delete one saved snapshot by its complete reference.
     #[command(alias = "rm")]
     Remove { id: String },
     /// Show the selected project, namespace, store, and config files; never creates a store.
+    #[command(display_order = 7)]
     Context,
     /// List metadata in this space, newest first; never expand payloads.
     List {

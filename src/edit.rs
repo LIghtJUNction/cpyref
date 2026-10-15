@@ -17,7 +17,8 @@ use std::{
 };
 use tempfile::NamedTempFile;
 
-#[derive(Debug, ClapArgs)]
+#[derive(Debug, Clone, ClapArgs, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Args {
     /// Complete reference containing the bytes to insert or replace with.
     pub id: String,
@@ -44,7 +45,10 @@ pub struct Args {
     /// Preview positions, sizes and hashes without writing or expanding content.
     #[arg(long)]
     pub dry_run: bool,
-    /// Required for writing: target SHA-256 from the approved preview or read.
+    /// Save a guarded edit plan without changing the target; use cpyref apply PLAN_ID next.
+    #[arg(long, conflicts_with_all = ["dry_run", "expect_sha256"])]
+    pub plan: bool,
+    /// Required for direct writing: target SHA-256 from the approved preview or read.
     #[arg(long)]
     pub expect_sha256: Option<String>,
 }
@@ -172,6 +176,11 @@ fn selection(bytes: &[u8], lines: Option<String>, text: Option<String>) -> Resul
 }
 
 fn validate(args: &Args, replace: bool) -> Result<()> {
+    if args.plan && (args.dry_run || args.expect_sha256.is_some()) {
+        return Err(Error::invalid(
+            "Use --plan by itself, or the existing --dry-run / --expect-sha256 route.",
+        ));
+    }
     let replacement = usize::from(args.lines.is_some()) + usize::from(args.text.is_some());
     let insertion = [
         args.before_line.is_some(),
@@ -199,17 +208,26 @@ fn validate(args: &Args, replace: bool) -> Result<()> {
                 "--expect-sha256 must be a complete 64-character SHA-256 value.",
             ));
         }
-    } else if !args.dry_run {
+    } else if !args.dry_run && !args.plan {
         return Err(Error::new(
             "PRECONDITION_REQUIRED",
             4,
-            "Preview with --dry-run, then supply its before_sha256 using --expect-sha256.",
+            "Use --plan, then cpyref apply PLAN_ID. For direct writes, preview with --dry-run and provide --expect-sha256.",
         ));
     }
     Ok(())
 }
 
 pub fn execute(context: &Context, args: &Args, replace: bool) -> Result<Value> {
+    execute_checked(context, args, replace, None)
+}
+
+pub(crate) fn execute_checked(
+    context: &Context,
+    args: &Args,
+    replace: bool,
+    expected_source: Option<&str>,
+) -> Result<Value> {
     validate(args, replace)?;
     let (reference, inserted) = context.store()?.get(&args.id)?;
     if reference.kind != RecordKind::Bytes {
@@ -219,11 +237,15 @@ pub fn execute(context: &Context, args: &Args, replace: bool) -> Result<Value> {
             "Edits require a bytes reference, not a run or source manifest.",
         ));
     }
+    if expected_source.is_some_and(|expected| expected != reference.sha256.as_str()) {
+        return Err(Error::new("REF_CHANGED", 10,
+            "The saved bytes no longer match this plan. Nothing was written; create a new plan from trusted input."));
+    }
     let requested = context.cwd.join(&args.target);
     let path = checked_path(&requested)?;
     // Stable lock objects live outside source folders and are shared across namespaces.
     // Different storage bases and non-cooperating programs are not covered by this lock.
-    let _lock = if args.dry_run {
+    let _lock = if args.dry_run || args.plan {
         None
     } else {
         let key = digest(path.as_os_str().as_encoded_bytes());
@@ -276,7 +298,7 @@ pub fn execute(context: &Context, args: &Args, replace: bool) -> Result<Value> {
     after.extend_from_slice(&inserted);
     after.extend_from_slice(&before[range.end..]);
     let after_sha256 = digest(&after);
-    if !args.dry_run {
+    if !args.dry_run && !args.plan {
         let parent = path
             .parent()
             .ok_or_else(|| Error::invalid("Target has no parent directory."))?;
@@ -309,10 +331,13 @@ pub fn execute(context: &Context, args: &Args, replace: bool) -> Result<Value> {
         temp.persist(&path)
             .map_err(|e| Error::io("Publish edited file", e.error))?;
     }
-    Ok(
-        json!({"ok": true, "reference": args.id, "target": path, "operation": if replace { "replace" } else { "insert" },
-        "applied": !args.dry_run, "byte_start": range.start, "byte_end": range.end,
+    let report = json!({"ok": true, "reference": args.id, "target": path, "operation": if replace { "replace" } else { "insert" },
+        "applied": !args.dry_run && !args.plan, "byte_start": range.start, "byte_end": range.end,
         "bytes_removed": range.len(), "bytes_inserted": inserted.len(), "output_bytes": after.len(),
-        "before_sha256": before_sha256, "after_sha256": after_sha256, "context": context.report()}),
-    )
+        "before_sha256": before_sha256, "after_sha256": after_sha256, "context": context.report()});
+    if args.plan {
+        crate::plan::save(context, args, replace, &reference.sha256, &report)
+    } else {
+        Ok(report)
+    }
 }

@@ -26,6 +26,7 @@ pub enum RecordKind {
     Snapshot,
     Run,
     Bundle,
+    EditPlan,
 }
 
 impl RecordKind {
@@ -65,7 +66,7 @@ fn corrupt(message: &str) -> Error {
     Error::new("CORRUPT_REF", 7, message)
 }
 
-fn valid_id(id: &str) -> bool {
+pub(crate) fn valid_id(id: &str) -> bool {
     id.len() == 13
         && id.starts_with('c')
         && id.as_bytes()[1..]
@@ -335,6 +336,7 @@ impl Store {
         let selector = match kind {
             RecordKind::Run => "run",
             RecordKind::Bundle => "bundle",
+            RecordKind::EditPlan => "edit_plan",
             _ => "snapshot",
         };
         let span = Span {

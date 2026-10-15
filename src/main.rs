@@ -89,6 +89,7 @@ fn matches_filter(metadata: &Metadata, filter: &cli::FilterArgs) -> bool {
 fn execute(command: Command, context: &Context) -> Result<()> {
     let store = context.store()?;
     match command {
+        Command::Apply { id, dry_run } => print_json(&cpyref::plan::apply(context, &id, dry_run)?),
         Command::Insert(args) => print_json(&cpyref::edit::execute(context, &args, false)?),
         Command::Replace(args) => print_json(&cpyref::edit::execute(context, &args, true)?),
         Command::Copy(args) => {
@@ -137,11 +138,14 @@ fn execute(command: Command, context: &Context) -> Result<()> {
             }
         }
         Command::Paste { id, output, force } => {
-            if store.info(&id)?.kind == cpyref::store::RecordKind::Run {
+            if matches!(
+                store.info(&id)?.kind,
+                cpyref::store::RecordKind::Run | cpyref::store::RecordKind::EditPlan
+            ) {
                 return Err(Error::new(
                     "WRONG_KIND",
                     4,
-                    "Use logs REF --stream stdout/stderr to retrieve a run's logs.",
+                    "Use cpyref logs REF --stream stdout/stderr for logs, or cpyref apply PLAN_ID --dry-run for an edit plan.",
                 ));
             }
             let (_, data) = store.get(&id)?;
@@ -371,7 +375,7 @@ fn execute(command: Command, context: &Context) -> Result<()> {
     }
 }
 
-fn run(cli: Cli) -> Result<u8> {
+fn run(mut cli: Cli) -> Result<u8> {
     if let Command::Receive {
         token,
         item,
@@ -388,6 +392,21 @@ fn run(cli: Cli) -> Result<u8> {
             .map_err(|e| context.annotate(e));
     }
     let context = Context::resolve(&cli.context)?;
+    match &mut cli.command {
+        Command::Apply { id, .. } => *id = cpyref::reference::resolve(&context, id, true)?,
+        Command::Insert(args) | Command::Replace(args) => {
+            args.id = cpyref::reference::resolve(&context, &args.id, false)?;
+        }
+        Command::Paste { id, .. }
+        | Command::Info { id }
+        | Command::Remove { id }
+        | Command::Verify { id }
+        | Command::Handoff { id, .. }
+        | Command::Logs { id, .. } => {
+            *id = cpyref::reference::resolve(&context, id, false)?;
+        }
+        _ => {}
+    }
     let result = match cli.command {
         command @ (Command::Run(_)
         | Command::Logs { .. }

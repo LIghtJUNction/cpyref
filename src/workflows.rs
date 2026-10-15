@@ -80,6 +80,7 @@ pub fn receive_record(
                     "file_count": manifest.files.len(), "content_saved": false, "sha256": metadata.sha256}),
                 )?;
             }
+            RecordKind::EditPlan => print_json(&cpyref::plan::show(context, &metadata.id)?)?,
             RecordKind::Bytes => unreachable!(),
         }
     }

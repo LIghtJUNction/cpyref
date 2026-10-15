@@ -10,6 +10,12 @@
 4. 传递实际完整编号，用 `paste --output` 落盘。只查大小或来源时用 `info`。跨 Agent 同时传递空间约定，或用 `handoff --format ref` / `receive`；后者仍要求同机可访问原存储。
 5. 按保留要求清理。`remove` 删除明确编号；`clean` 先预览，确认相同条件和返回的确认值后才执行。
 
+## 简单编辑流程
+
+`cpyref copy FILE | cpyref insert - TARGET --at-end --plan` 只生成计划；检查目标和范围后，在相同空间运行返回的 `cpyref apply PLAN_ID`。无需提取哈希。替换使用 `cpyref replace`。不得因 `TARGET_CHANGED` 自动重新生成计划后重试。新流程需更新源码，详见[管道与编辑计划](easy-edits.md)。
+
+命令示例必须带 `cpyref` 前缀。`-` 传入一个完整编号或成功的对应 JSON，不传正文。源选择器不可混用；需要给标记限定范围时使用 `--within`，而不是叠加 `--lines`。
+
 ## 失败处理
 
 | 错误 | 处理 |

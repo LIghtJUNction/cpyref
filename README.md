@@ -21,9 +21,8 @@ Agent 可安装 [skills/cpyref](skills/cpyref/SKILL.md)，按需读取子命令�
 
 ```sh
 cpyref context
-# 复制成功后，将实际编号直接传给 paste。
-ref=$(cpyref copy input.txt --lines 20:40) &&
-    cpyref paste "$ref" --output snippet.rs
+# 管道只传编号；正文不会经过模型。
+cpyref copy input.txt --lines 20:40 | cpyref paste - --output snippet.rs
 
 # 文件、唯一文本、管道输入。
 cpyref copy input.txt
@@ -45,6 +44,19 @@ cat file.txt | cpyref copy
 
 四类主选择器不能混用。多个匹配会报 `AMBIGUOUS`，应缩小范围；不要自动选择第一个。完整规则、预览、错误码见[命令参考](docs/cli-reference.md)。
 
+## 少传编号，不抄哈希
+
+以下新流程需从包含 `apply` 的源码安装，旧发布包可能没有：
+
+```sh
+set -o pipefail  # Bash；保留上游失败状态
+cpyref copy source.rs --lines 10:20 | cpyref insert - target.rs --at-end --plan
+# 检查返回的目标、位置和大小，在相同空间运行 next_command。
+cpyref apply PLAN_ID
+```
+
+`PLAN_ID` 用实际返回的 `plan` 替换。第一条命令不修改目标；第二条自动核对计划中的来源和目标哈希。目标已变化就停止，不会自动刷新哈希。替换用 `cpyref replace ... --plan`。原有显式哈希方式保留；完整规则见[管道与编辑计划](docs/easy-edits.md)。
+
 ## 空间与安全
 
 空间取决于**命令所在项目**，不是输入文件的位置。向上寻找最近的 `.git` 或 `.cpyref.toml`；同项目子目录共用空间，无标记时按当前目录隔离。
@@ -60,7 +72,7 @@ cat file.txt | cpyref copy
 | 任务 | 命令或参考 |
 | --- | --- |
 | 查看、查找、清理 | `info`、`list`、`search`、`stats`、`remove`、`clean`；[命令参考](docs/cli-reference.md) |
-| 插入或替换 | `insert`、`replace`；先预览，再提供目标哈希；[安全写入](docs/hardening.md) |
+| 插入或替换 | `cpyref insert/replace ... --plan`、`cpyref apply PLAN_ID`；[编辑计划](docs/easy-edits.md)；[底层写入](docs/hardening.md) |
 | 保存测试日志、核对来源 | `run`、`logs`、`snapshot`、`verify`；[工作流](docs/workflows.md) |
 | 交接引用或命名包 | `handoff`、`receive`、`bundle`；[工作流](docs/workflows.md) |
 | Agent 的调用与失败处理 | [调用约定](docs/agent-contract.md) |
