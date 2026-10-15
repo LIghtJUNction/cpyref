@@ -1,0 +1,28 @@
+{
+  "task": "port_parser",
+  "category": "function_reuse",
+  "arm": "native",
+  "seed": 17,
+  "prompt_tokens": 3953,
+  "completion_tokens": 904,
+  "model_calls": 5,
+  "tool_calls": 5,
+  "cpyref_command_calls": 0,
+  "model_seconds": 255.65555407,
+  "tool_seconds": 0.32665552200001,
+  "usage_complete": true,
+  "termination": "turn_limit",
+  "inference_error": null,
+  "elapsed_seconds": 255.983463372,
+  "acceptance": {
+    "passed": false,
+    "exit_code": 1,
+    "stdout": "",
+    "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: wrong bytes: compat.py\n"
+  },
+  "acceptance_seconds": 0.14081586200001084,
+  "passed": false,
+  "final_file_sha256": {
+    "compat.py": "2b6534df1fd3238d024e5533a5055e2fa3b98cb8b7e6a5360cf664da3b91bb1e"
+  }
+}

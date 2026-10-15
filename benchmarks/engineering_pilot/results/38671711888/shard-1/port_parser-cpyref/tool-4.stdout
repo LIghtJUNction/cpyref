@@ -1,0 +1,2 @@
+def parse_duration(text):
+    Convert a duration with ms, s, m, or h units to milliseconds.

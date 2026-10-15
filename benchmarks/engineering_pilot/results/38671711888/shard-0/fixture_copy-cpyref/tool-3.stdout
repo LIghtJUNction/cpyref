@@ -1,0 +1,6 @@
+import json
+from pathlib import Path
+for name in ["fixtures/users.json", "fixtures/orders.json", "fixtures/events.json"]:
+    value = json.loads(Path(name).read_text())
+    assert len(value["items"]) == 80
+print("fixture contract passed")

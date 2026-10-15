@@ -1,0 +1,6 @@
+"""Public lookup API."""
+
+# INSERT_TABLE
+
+def lookup(key):
+    return TABLE[key]

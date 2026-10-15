@@ -1,0 +1,28 @@
+{
+  "task": "labels_logic",
+  "category": "no_copy_control",
+  "arm": "native",
+  "seed": 17,
+  "prompt_tokens": 3069,
+  "completion_tokens": 491,
+  "model_calls": 5,
+  "tool_calls": 5,
+  "cpyref_command_calls": 0,
+  "model_seconds": 167.06271896599992,
+  "tool_seconds": 0.3285876439999811,
+  "usage_complete": true,
+  "termination": "turn_limit",
+  "inference_error": null,
+  "elapsed_seconds": 167.39251601900003,
+  "acceptance": {
+    "passed": false,
+    "exit_code": 1,
+    "stdout": "",
+    "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError\n"
+  },
+  "acceptance_seconds": 0.14135465399999703,
+  "passed": false,
+  "final_file_sha256": {
+    "labels.py": "ed6e4a812c36814ff52ad2d296d940410845640f9ea8ac080fb81c2793d621de"
+  }
+}

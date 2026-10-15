@@ -1,0 +1,71 @@
+{
+  "audit": {
+    "expected_episodes": 12,
+    "observed_episodes": 12,
+    "valid_complete_pilot": false,
+    "errors": [
+      "Incomplete inference: extract_table/native",
+      "Incomplete inference: extract_table/cpyref",
+      "Incomplete inference: sync_config/native"
+    ]
+  },
+  "totals": {
+    "native": {
+      "attempts": 6,
+      "successes": 0,
+      "prompt_tokens": 17887,
+      "completion_tokens": 1715,
+      "total_tokens": 19602,
+      "elapsed_seconds": 1259.4780918930003,
+      "tool_calls": 21,
+      "episodes_using_cpyref": 0,
+      "tokens_per_success": null,
+      "seconds_per_success": null,
+      "price_ratio_sensitivity": {
+        "1": {
+          "units": 19602,
+          "units_per_success": null
+        },
+        "4": {
+          "units": 24747,
+          "units_per_success": null
+        },
+        "10": {
+          "units": 35037,
+          "units_per_success": null
+        }
+      }
+    },
+    "cpyref": {
+      "attempts": 6,
+      "successes": 1,
+      "prompt_tokens": 33476,
+      "completion_tokens": 1737,
+      "total_tokens": 35213,
+      "elapsed_seconds": 1775.742469555,
+      "tool_calls": 26,
+      "episodes_using_cpyref": 2,
+      "tokens_per_success": 35213.0,
+      "seconds_per_success": 1775.742469555,
+      "price_ratio_sensitivity": {
+        "1": {
+          "units": 35213,
+          "units_per_success": 35213.0
+        },
+        "4": {
+          "units": 40424,
+          "units_per_success": 40424.0
+        },
+        "10": {
+          "units": 50846,
+          "units_per_success": 50846.0
+        }
+      }
+    }
+  },
+  "model": "Qwen3-4B-Instruct-2507 Q4_K_M",
+  "price_ratio_note": "Input tokens + R * output tokens; assumed R, not a currency or bill.",
+  "scope": "Six synthetic executable maintenance tasks; one seed; local CPU model; no population-wide proof.",
+  "api_billed_cost_usd": 0,
+  "compute_cost_usd": null
+}

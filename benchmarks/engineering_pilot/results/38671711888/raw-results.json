@@ -1,0 +1,336 @@
+[
+  {
+    "task": "extract_table",
+    "category": "partial_reuse",
+    "arm": "native",
+    "seed": 17,
+    "prompt_tokens": 2022,
+    "completion_tokens": 24,
+    "model_calls": 2,
+    "tool_calls": 2,
+    "cpyref_command_calls": 0,
+    "model_seconds": 86.715066374,
+    "tool_seconds": 0.1309040080000159,
+    "usage_complete": false,
+    "termination": "infrastructure_error",
+    "inference_error": "timed out",
+    "elapsed_seconds": 266.94701987300004,
+    "acceptance": {
+      "passed": false,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: wrong bytes: catalog.py\n"
+    },
+    "acceptance_seconds": 0.2563516589999608,
+    "passed": false,
+    "final_file_sha256": {
+      "catalog.py": "0d51c070c6b60a1f891cfba709e91cc6a6c8b26c202d78a6a3b21ef35e4085d9"
+    }
+  },
+  {
+    "task": "extract_table",
+    "category": "partial_reuse",
+    "arm": "cpyref",
+    "seed": 17,
+    "prompt_tokens": 529,
+    "completion_tokens": 12,
+    "model_calls": 1,
+    "tool_calls": 1,
+    "cpyref_command_calls": 0,
+    "model_seconds": 21.845593123000015,
+    "tool_seconds": 0.07097138599999653,
+    "usage_complete": false,
+    "termination": "infrastructure_error",
+    "inference_error": "timed out",
+    "elapsed_seconds": 202.01811106699995,
+    "acceptance": {
+      "passed": false,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: wrong bytes: catalog.py\n"
+    },
+    "acceptance_seconds": 0.2282254759999205,
+    "passed": false,
+    "final_file_sha256": {
+      "catalog.py": "0d51c070c6b60a1f891cfba709e91cc6a6c8b26c202d78a6a3b21ef35e4085d9"
+    }
+  },
+  {
+    "task": "fixture_copy",
+    "category": "whole_file_control",
+    "arm": "native",
+    "seed": 17,
+    "prompt_tokens": 5040,
+    "completion_tokens": 169,
+    "model_calls": 5,
+    "tool_calls": 5,
+    "cpyref_command_calls": 0,
+    "model_seconds": 224.6487780000001,
+    "tool_seconds": 0.42797472799998104,
+    "usage_complete": true,
+    "termination": "turn_limit",
+    "inference_error": null,
+    "elapsed_seconds": 225.07810727600008,
+    "acceptance": {
+      "passed": false,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 4, in <module>\n  File \"/usr/local/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'fixtures/users.json'\n"
+    },
+    "acceptance_seconds": 0.14434862899997825,
+    "passed": false,
+    "final_file_sha256": {}
+  },
+  {
+    "task": "fixture_copy",
+    "category": "whole_file_control",
+    "arm": "cpyref",
+    "seed": 17,
+    "prompt_tokens": 8299,
+    "completion_tokens": 98,
+    "model_calls": 5,
+    "tool_calls": 5,
+    "cpyref_command_calls": 0,
+    "model_seconds": 363.6621487259998,
+    "tool_seconds": 0.3247729619999973,
+    "usage_complete": true,
+    "termination": "turn_limit",
+    "inference_error": null,
+    "elapsed_seconds": 363.98833244800005,
+    "acceptance": {
+      "passed": false,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 4, in <module>\n  File \"/usr/local/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'fixtures/users.json'\n"
+    },
+    "acceptance_seconds": 0.14354763799997272,
+    "passed": false,
+    "final_file_sha256": {}
+  },
+  {
+    "task": "port_parser",
+    "category": "function_reuse",
+    "arm": "native",
+    "seed": 17,
+    "prompt_tokens": 3953,
+    "completion_tokens": 904,
+    "model_calls": 5,
+    "tool_calls": 5,
+    "cpyref_command_calls": 0,
+    "model_seconds": 255.65555407,
+    "tool_seconds": 0.32665552200001,
+    "usage_complete": true,
+    "termination": "turn_limit",
+    "inference_error": null,
+    "elapsed_seconds": 255.983463372,
+    "acceptance": {
+      "passed": false,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: wrong bytes: compat.py\n"
+    },
+    "acceptance_seconds": 0.14081586200001084,
+    "passed": false,
+    "final_file_sha256": {
+      "compat.py": "2b6534df1fd3238d024e5533a5055e2fa3b98cb8b7e6a5360cf664da3b91bb1e"
+    }
+  },
+  {
+    "task": "port_parser",
+    "category": "function_reuse",
+    "arm": "cpyref",
+    "seed": 17,
+    "prompt_tokens": 5697,
+    "completion_tokens": 536,
+    "model_calls": 5,
+    "tool_calls": 5,
+    "cpyref_command_calls": 3,
+    "model_seconds": 297.620448228,
+    "tool_seconds": 0.525959725000007,
+    "usage_complete": true,
+    "termination": "turn_limit",
+    "inference_error": null,
+    "elapsed_seconds": 298.14779927100005,
+    "acceptance": {
+      "passed": false,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: wrong bytes: compat.py\n"
+    },
+    "acceptance_seconds": 0.14131475199997112,
+    "passed": false,
+    "final_file_sha256": {
+      "compat.py": "b234c6b07dc9bd3b72990b303c6dee755f4a73892f91d7ca7449793337f006e1"
+    }
+  },
+  {
+    "task": "noisy_retry_bug",
+    "category": "noisy_test_diagnosis",
+    "arm": "cpyref",
+    "seed": 17,
+    "prompt_tokens": 4364,
+    "completion_tokens": 127,
+    "model_calls": 5,
+    "tool_calls": 5,
+    "cpyref_command_calls": 0,
+    "model_seconds": 185.02110829200012,
+    "tool_seconds": 0.3293458110000529,
+    "usage_complete": true,
+    "termination": "turn_limit",
+    "inference_error": null,
+    "elapsed_seconds": 185.35173119900003,
+    "acceptance": {
+      "passed": false,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 4, in <module>\nAssertionError\n"
+    },
+    "acceptance_seconds": 0.14202711699999782,
+    "passed": false,
+    "final_file_sha256": {
+      "retry.py": "773260ddf462c52f069a240602bb06a6830eca06c789d468405e2fcf23bed350"
+    }
+  },
+  {
+    "task": "noisy_retry_bug",
+    "category": "noisy_test_diagnosis",
+    "arm": "native",
+    "seed": 17,
+    "prompt_tokens": 1885,
+    "completion_tokens": 100,
+    "model_calls": 4,
+    "tool_calls": 2,
+    "cpyref_command_calls": 0,
+    "model_seconds": 81.22378886500019,
+    "tool_seconds": 0.1297705860000633,
+    "usage_complete": true,
+    "termination": "agent_done",
+    "inference_error": null,
+    "elapsed_seconds": 81.35421826600009,
+    "acceptance": {
+      "passed": false,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 4, in <module>\nAssertionError\n"
+    },
+    "acceptance_seconds": 0.14100885400000607,
+    "passed": false,
+    "final_file_sha256": {
+      "retry.py": "773260ddf462c52f069a240602bb06a6830eca06c789d468405e2fcf23bed350"
+    }
+  },
+  {
+    "task": "labels_logic",
+    "category": "no_copy_control",
+    "arm": "cpyref",
+    "seed": 17,
+    "prompt_tokens": 4930,
+    "completion_tokens": 820,
+    "model_calls": 5,
+    "tool_calls": 5,
+    "cpyref_command_calls": 0,
+    "model_seconds": 288.743695292,
+    "tool_seconds": 0.32553123600013123,
+    "usage_complete": true,
+    "termination": "turn_limit",
+    "inference_error": null,
+    "elapsed_seconds": 289.0705738340001,
+    "acceptance": {
+      "passed": true,
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "acceptance_seconds": 0.14178999800003567,
+    "passed": true,
+    "final_file_sha256": {
+      "labels.py": "46c2ba1f25ad6a716bf9dc08128a519715f6e26af5c14a991e437867715dc161"
+    }
+  },
+  {
+    "task": "labels_logic",
+    "category": "no_copy_control",
+    "arm": "native",
+    "seed": 17,
+    "prompt_tokens": 3069,
+    "completion_tokens": 491,
+    "model_calls": 5,
+    "tool_calls": 5,
+    "cpyref_command_calls": 0,
+    "model_seconds": 167.06271896599992,
+    "tool_seconds": 0.3285876439999811,
+    "usage_complete": true,
+    "termination": "turn_limit",
+    "inference_error": null,
+    "elapsed_seconds": 167.39251601900003,
+    "acceptance": {
+      "passed": false,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError\n"
+    },
+    "acceptance_seconds": 0.14135465399999703,
+    "passed": false,
+    "final_file_sha256": {
+      "labels.py": "ed6e4a812c36814ff52ad2d296d940410845640f9ea8ac080fb81c2793d621de"
+    }
+  },
+  {
+    "task": "sync_config",
+    "category": "multi_target_reuse",
+    "arm": "cpyref",
+    "seed": 17,
+    "prompt_tokens": 9657,
+    "completion_tokens": 144,
+    "model_calls": 5,
+    "tool_calls": 5,
+    "cpyref_command_calls": 1,
+    "model_seconds": 435.79698447099975,
+    "tool_seconds": 0.4295868450001308,
+    "usage_complete": true,
+    "termination": "turn_limit",
+    "inference_error": null,
+    "elapsed_seconds": 436.2278615859999,
+    "acceptance": {
+      "passed": false,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: wrong bytes: dev.ini\n"
+    },
+    "acceptance_seconds": 0.14115516900005787,
+    "passed": false,
+    "final_file_sha256": {
+      "dev.ini": "d497db78342c95b1ecf6b195f1a7d7daeb1cb09b63c6347aa89b8b58ec0212e6",
+      "prod.ini": "813a524705e356884484a057a5330154bcb8f7f7062442e0a69bb80141ec4cf0"
+    }
+  },
+  {
+    "task": "sync_config",
+    "category": "multi_target_reuse",
+    "arm": "native",
+    "seed": 17,
+    "prompt_tokens": 1918,
+    "completion_tokens": 27,
+    "model_calls": 2,
+    "tool_calls": 2,
+    "cpyref_command_calls": 0,
+    "model_seconds": 81.45454696700017,
+    "tool_seconds": 0.13152045199990425,
+    "usage_complete": false,
+    "termination": "infrastructure_error",
+    "inference_error": "timed out",
+    "elapsed_seconds": 261.6870815330001,
+    "acceptance": {
+      "passed": false,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: wrong bytes: dev.ini\n"
+    },
+    "acceptance_seconds": 0.21180589599998711,
+    "passed": false,
+    "final_file_sha256": {
+      "dev.ini": "d497db78342c95b1ecf6b195f1a7d7daeb1cb09b63c6347aa89b8b58ec0212e6",
+      "prod.ini": "813a524705e356884484a057a5330154bcb8f7f7062442e0a69bb80141ec4cf0"
+    }
+  }
+]

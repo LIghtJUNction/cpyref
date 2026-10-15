@@ -1,0 +1,26 @@
+{
+  "task": "fixture_copy",
+  "category": "whole_file_control",
+  "arm": "cpyref",
+  "seed": 17,
+  "prompt_tokens": 8299,
+  "completion_tokens": 98,
+  "model_calls": 5,
+  "tool_calls": 5,
+  "cpyref_command_calls": 0,
+  "model_seconds": 363.6621487259998,
+  "tool_seconds": 0.3247729619999973,
+  "usage_complete": true,
+  "termination": "turn_limit",
+  "inference_error": null,
+  "elapsed_seconds": 363.98833244800005,
+  "acceptance": {
+    "passed": false,
+    "exit_code": 1,
+    "stdout": "",
+    "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 4, in <module>\n  File \"/usr/local/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'fixtures/users.json'\n"
+  },
+  "acceptance_seconds": 0.14354763799997272,
+  "passed": false,
+  "final_file_sha256": {}
+}

@@ -1,0 +1,14 @@
+[server]
+host = localhost
+port = 8080
+
+# INSERT_TUNING
+[logging]
+level = DEBUG
+[server]
+host = 0.0.0.0
+port = 443
+
+# INSERT_TUNING
+[logging]
+level = WARNING

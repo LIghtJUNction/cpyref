@@ -1,0 +1,21 @@
+{
+  "model_repository": "bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF",
+  "model_revision": "ae44f08e1392f39c0e474af10c3ff8355c8b6688",
+  "model_file": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+  "model_sha256": "2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e",
+  "model_path": "/home/runner/work/_temp/inference/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+  "model_expected_sha256": "2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e",
+  "llama_stable_tag": "v0.6.0",
+  "llama_tag": "b11429",
+  "llama_archive_sha256": "f6d25dde8f51133143d1453da4fd5f73b145127177612a283bf7995957af3392",
+  "llama_archive_expected_digest": "sha256:f6d25dde8f51133143d1453da4fd5f73b145127177612a283bf7995957af3392",
+  "server": "/home/runner/work/_temp/inference/llama/llama-b11429/llama-server",
+  "docker_image": "sha256:df18428df8a0f9189c84e7424d214b4c50092af1f9dca5842a00c41c39bda316",
+  "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+  "cpu_count": 4,
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "model_is_quantized": true,
+  "api_billed_cost_usd": 0,
+  "compute_cost_usd": null,
+  "note": "Local CPU inference. Zero API charge is not zero compute cost."
+}

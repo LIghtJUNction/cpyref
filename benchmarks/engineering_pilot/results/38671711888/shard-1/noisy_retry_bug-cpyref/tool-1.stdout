@@ -1,0 +1,11 @@
+import unittest
+from retry import backoff
+
+class RetryTests(unittest.TestCase):
+    def test_backoff(self):
+        for i in range(600):
+            print("trace: processed request %04d; status=ok" % i)
+        self.assertEqual([backoff(i) for i in range(8)], [1, 2, 4, 8, 16, 32, 60, 60])
+
+if __name__ == "__main__":
+    unittest.main()

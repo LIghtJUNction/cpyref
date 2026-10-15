@@ -1,0 +1,4 @@
+  File "<string>", line 1
+    import sys, json; data = json.load(sys.stdin); print(f'{{"items": [{data['items']}]}')
+                                                                                       ^
+SyntaxError: f-string: single '}' is not allowed

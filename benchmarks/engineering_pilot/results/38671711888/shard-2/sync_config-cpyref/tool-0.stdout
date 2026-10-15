@@ -1,0 +1,52 @@
+# TUNING_START
+[service_tuning]
+route_00 = ae272aed121629681cd855c4
+route_01 = 47cc15e114e10dcdeb4444a6
+route_02 = 8c37a438d777755b133d6a65
+route_03 = ceb71e9cd31c27573ef87446
+route_04 = 12e4e699a149f55688e64037
+route_05 = 5d879f996cf47756211a0db6
+route_06 = eba77cc4074d17f386180965
+route_07 = 4f7db1a33ffe1cace30fc084
+route_08 = 444b2836f58e310ea1c42f48
+route_09 = 0fc2e97adfe93244b852722d
+route_10 = 172b2f3ba1d8d6cbe081b8d2
+route_11 = b6ae88e2eabc48ec79efd680
+route_12 = 49d26a1f6c9a66109a8c4919
+route_13 = f0c5599783f73a95adfeeb1d
+route_14 = e6d985bc6fa75042a9dc8395
+route_15 = 625ccdab5e192d4c541d5621
+route_16 = 08b39a98278517cbef78a0cb
+route_17 = bc107acd6020081a0932bdfe
+route_18 = 0908d12bff07a32481902f55
+route_19 = 4a1dbcafb4a2bf9b470d4baf
+route_20 = eadb16d7ff2960bd8d7e9873
+route_21 = 574ca17f46773dc6cc20d0c2
+route_22 = aa1ce84cd751cfc3dbfddb83
+route_23 = 4af07294343e286d5092983f
+route_24 = a074a2c139f2820902360364
+route_25 = 452a124447e72a537144f1f0
+route_26 = 14ffaa10badb900e2d8562f3
+route_27 = c135b995c465336a44a65c90
+route_28 = 8f741ec585142e90b021b288
+route_29 = 92abda005b2188e42acabb8d
+route_30 = 72351ee74fab8ad722715ca1
+route_31 = f48940ed5997b7eda6ce187e
+route_32 = d6adf8db062e00d626fced42
+route_33 = 34c03135c9fa5291beec4b20
+route_34 = e7622d3a3271603ade31db72
+route_35 = 60c469e7b577efe939d3b38a
+route_36 = 68ba0bcc6cc31a731a135a31
+route_37 = e1a27b313bdae1cd19492fc1
+route_38 = 809b7fe3dbc94120dbbe2a72
+route_39 = a77fa602d13a0861f7ff9903
+route_40 = e1154468b0e51c3cddaf6cf5
+route_41 = e00b9be5357c1c86db74ae9a
+route_42 = 11a92ce2832469c03fad2337
+route_43 = ec44ab6c6085d73a982c4957
+route_44 = e2db37e27c2548bc44df0184
+route_45 = c47454c1f4c2300500d86778
+route_46 = a72d8f36c965304b9a7b1297
+route_47 = 227b82ea395fd68f8fbccef2
+
+# TUNING_END

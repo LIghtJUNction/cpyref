@@ -1,0 +1,28 @@
+{
+  "task": "noisy_retry_bug",
+  "category": "noisy_test_diagnosis",
+  "arm": "native",
+  "seed": 17,
+  "prompt_tokens": 1885,
+  "completion_tokens": 100,
+  "model_calls": 4,
+  "tool_calls": 2,
+  "cpyref_command_calls": 0,
+  "model_seconds": 81.22378886500019,
+  "tool_seconds": 0.1297705860000633,
+  "usage_complete": true,
+  "termination": "agent_done",
+  "inference_error": null,
+  "elapsed_seconds": 81.35421826600009,
+  "acceptance": {
+    "passed": false,
+    "exit_code": 1,
+    "stdout": "",
+    "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 4, in <module>\nAssertionError\n"
+  },
+  "acceptance_seconds": 0.14100885400000607,
+  "passed": false,
+  "final_file_sha256": {
+    "retry.py": "773260ddf462c52f069a240602bb06a6830eca06c789d468405e2fcf23bed350"
+  }
+}

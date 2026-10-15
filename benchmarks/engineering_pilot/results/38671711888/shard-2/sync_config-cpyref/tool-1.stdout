@@ -1,0 +1,7 @@
+[server]
+host = localhost
+port = 8080
+
+# INSERT_TUNING
+[logging]
+level = DEBUG

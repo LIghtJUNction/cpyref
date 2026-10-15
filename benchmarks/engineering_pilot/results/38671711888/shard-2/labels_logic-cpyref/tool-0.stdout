@@ -1,0 +1,2 @@
+def unique_labels(items):
+    return sorted(set(items))

@@ -1,0 +1,29 @@
+{
+  "task": "sync_config",
+  "category": "multi_target_reuse",
+  "arm": "cpyref",
+  "seed": 17,
+  "prompt_tokens": 9657,
+  "completion_tokens": 144,
+  "model_calls": 5,
+  "tool_calls": 5,
+  "cpyref_command_calls": 1,
+  "model_seconds": 435.79698447099975,
+  "tool_seconds": 0.4295868450001308,
+  "usage_complete": true,
+  "termination": "turn_limit",
+  "inference_error": null,
+  "elapsed_seconds": 436.2278615859999,
+  "acceptance": {
+    "passed": false,
+    "exit_code": 1,
+    "stdout": "",
+    "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: wrong bytes: dev.ini\n"
+  },
+  "acceptance_seconds": 0.14115516900005787,
+  "passed": false,
+  "final_file_sha256": {
+    "dev.ini": "d497db78342c95b1ecf6b195f1a7d7daeb1cb09b63c6347aa89b8b58ec0212e6",
+    "prod.ini": "813a524705e356884484a057a5330154bcb8f7f7062442e0a69bb80141ec4cf0"
+  }
+}

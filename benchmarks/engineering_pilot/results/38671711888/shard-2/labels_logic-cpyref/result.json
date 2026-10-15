@@ -1,0 +1,28 @@
+{
+  "task": "labels_logic",
+  "category": "no_copy_control",
+  "arm": "cpyref",
+  "seed": 17,
+  "prompt_tokens": 4930,
+  "completion_tokens": 820,
+  "model_calls": 5,
+  "tool_calls": 5,
+  "cpyref_command_calls": 0,
+  "model_seconds": 288.743695292,
+  "tool_seconds": 0.32553123600013123,
+  "usage_complete": true,
+  "termination": "turn_limit",
+  "inference_error": null,
+  "elapsed_seconds": 289.0705738340001,
+  "acceptance": {
+    "passed": true,
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "acceptance_seconds": 0.14178999800003567,
+  "passed": true,
+  "final_file_sha256": {
+    "labels.py": "46c2ba1f25ad6a716bf9dc08128a519715f6e26af5c14a991e437867715dc161"
+  }
+}

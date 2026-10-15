@@ -1,0 +1,28 @@
+{
+  "task": "extract_table",
+  "category": "partial_reuse",
+  "arm": "native",
+  "seed": 17,
+  "prompt_tokens": 2022,
+  "completion_tokens": 24,
+  "model_calls": 2,
+  "tool_calls": 2,
+  "cpyref_command_calls": 0,
+  "model_seconds": 86.715066374,
+  "tool_seconds": 0.1309040080000159,
+  "usage_complete": false,
+  "termination": "infrastructure_error",
+  "inference_error": "timed out",
+  "elapsed_seconds": 266.94701987300004,
+  "acceptance": {
+    "passed": false,
+    "exit_code": 1,
+    "stdout": "",
+    "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: wrong bytes: catalog.py\n"
+  },
+  "acceptance_seconds": 0.2563516589999608,
+  "passed": false,
+  "final_file_sha256": {
+    "catalog.py": "0d51c070c6b60a1f891cfba709e91cc6a6c8b26c202d78a6a3b21ef35e4085d9"
+  }
+}

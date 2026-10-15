@@ -1,0 +1,4 @@
+def backoff(attempt):
+    if not isinstance(attempt, int) or attempt < 0:
+        raise ValueError("attempt must be a nonnegative integer")
+    return min(60, 2 ** (attempt + 1))
